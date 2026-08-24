@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "authority_id": "apex-acc-attestation-authority-v1",
+  "authority_repository": "https://github.com/chrizzatsu/acc-attestation-authority",
+  "expected_sigstore_identity": "https://github.com/chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation.yml@refs/heads/main",
+  "expected_oidc_issuer": "https://token.actions.githubusercontent.com",
+  "subject": {
+    "clerk_publishable_key_fingerprint_sha256": "61b16bead7b0155c4e1d23ce83031702c5fce95f3799ea5a2a0f501e99cc057c",
+    "clerk_api_instance_id_fingerprint_sha256": "61ca182dce2bc4287d70a86b663dca397215613a10ed5f598f99cf11d63abb07",
+    "fingerprint_algorithms": {
+      "publishable_key": "sha256(acc-clerk-instance-v1\\0 || exact publishable key bytes)",
+      "api_instance_id": "sha256(acc-clerk-api-instance-v1\\0 || exact Clerk API instance id bytes)"
+    },
+    "required_environment_type": "development",
+    "acc_production_base_sha": "ebb3af3df79438dbe926584f637a5e489f2682dd"
+  },
+  "owner_authorization": {
+    "authorized": true,
+    "authorization_statement_sha256": "95990f3d6ec6b813c1ea77adf9f86b83c9e11fc3c3987587618def347cfceb70",
+    "authorized_at_utc": "2026-08-24T08:04:22Z",
+    "maximum_incremental_spend_eur": "0.00"
+  },
+  "validity": {
+    "not_before_utc": "2026-08-24T08:04:22Z",
+    "not_after_utc": "2026-09-23T08:04:22Z"
+  },
+  "operation_contract": {
+    "purpose": "One bounded TR-01D two-workspace read-isolation acceptance run",
+    "temporary_identity": {
+      "maximum_created": 1,
+      "classification": "non-customer acceptance principal",
+      "must_bind_existing_workspace_member_external_id": true,
+      "email_addresses": [],
+      "phone_numbers": [],
+      "username": null,
+      "password": null,
+      "invitations": false,
+      "notifications": false,
+      "customer_contact": false
+    },
+    "allowed_clerk_operations": [
+      "users.create for the single constrained temporary identity",
+      "signInTokens.create for that exact temporary identity",
+      "standard existing OAuth 2.1 authorization flow",
+      "users.delete for that exact temporary identity in finally/recovery"
+    ],
+    "forbidden_clerk_operations": [
+      "billing.*",
+      "plan create/update/activation",
+      "subscription create/update/activation",
+      "organization mutation",
+      "email or SMS send",
+      "invitation creation",
+      "contact-point creation"
+    ],
+    "non_clerk_constraints": {
+      "supabase_mutation": false,
+      "database_sql_or_rpc": false,
+      "workspace_or_membership_mutation": false,
+      "crm_mutation": false,
+      "mcp_write_or_delete": false,
+      "external_send": false,
+      "new_spend": false
+    },
+    "runtime_preconditions": [
+      "Both live instance fingerprints equal this policy",
+      "Clerk instance environment_type equals development",
+      "All six existing entity types are present in both existing workspaces",
+      "Exactly one unmatched existing workspace membership requires the temporary principal",
+      "No existing Clerk principal already resolves to that membership",
+      "The immutable candidate and independent zero-finding review match exactly"
+    ],
+    "cleanup_postconditions": [
+      "Temporary principal absent after finally or cleanup-only recovery",
+      "No duplicate temporary principal",
+      "All auth tickets, sessions, OAuth tokens and browser contexts destroyed",
+      "Workspace, membership and CRM counts and bindings unchanged",
+      "No billing, plan, subscription, communication or contact-point action",
+      "No credential, PII, ID or token persisted in acceptance receipts"
+    ],
+    "fail_closed": true
+  },
+  "evidence_sources": [
+    {
+      "type": "live_clerk_backend_readback",
+      "method": "GET /v1/instance",
+      "observed_environment_type": "development",
+      "api_authenticated": true,
+      "raw_id_or_secret_persisted": false,
+      "observed_at_utc": "2026-08-24T08:04:00Z"
+    },
+    {
+      "type": "official_documentation",
+      "url": "https://clerk.com/docs/guides/development/managing-environments",
+      "claim": "Development is Clerk's dedicated local/testing instance type"
+    },
+    {
+      "type": "official_pricing",
+      "url": "https://clerk.com/pricing",
+      "claim": "Clerk states Pro features are available to try in development instances"
+    },
+    {
+      "type": "official_github_billing",
+      "url": "https://docs.github.com/billing/managing-billing-for-github-actions/about-billing-for-github-actions",
+      "claim": "Standard GitHub-hosted runner minutes remain free for public repositories"
+    }
+  ],
+  "privacy": {
+    "contains_secret": false,
+    "contains_pii": false,
+    "contains_raw_clerk_instance_id": false,
+    "contains_raw_publishable_key": false
+  }
+}
