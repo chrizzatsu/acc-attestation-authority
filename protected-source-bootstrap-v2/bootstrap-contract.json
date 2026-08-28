@@ -1,0 +1,181 @@
+{
+  "activation_only_decision": {
+    "activation_authorized_requires_external_post_candidate_review": true,
+    "activation_authorizes_only": "exact-acc-releaser-activation",
+    "closure_matrix_required_false": [
+      "F12"
+    ],
+    "closure_matrix_required_true": [
+      "F1",
+      "F2",
+      "F3",
+      "F4",
+      "F5",
+      "F6",
+      "F7",
+      "F8",
+      "F9",
+      "F10",
+      "F11"
+    ],
+    "f8_closure_requires_pinned_live_evidence": true,
+    "final_approved": false,
+    "final_release_authorized": false,
+    "live_evidence_closure": "F8",
+    "open_closures_must_be_recorded_as_findings": true,
+    "pre_activation_activation_authorized": false,
+    "pre_activation_activation_findings": [
+      {
+        "closure": "F8",
+        "finding": "F8-AUTHENTICATED-SOURCE-CHAIN-UNAVAILABLE"
+      }
+    ],
+    "pre_activation_closure_matrix_required_false": [
+      "F12",
+      "F8"
+    ],
+    "review_outcome": "ACTIVATION_ONLY"
+  },
+  "artifact": {
+    "content_digest_algorithm": "sha256(acc-authority-v2-protected-source-artifact\\0 || sorted(len(name)||name||len(bytes)||bytes))",
+    "files": [
+      "kanban-review-envelope.json",
+      "preissuance-review-receipt.json"
+    ],
+    "immutable_actions_artifact_required": true,
+    "name": "authority-v2-review-t_c298fca4"
+  },
+  "authenticated_read_inventory": [
+    "authenticated/authority-checkout",
+    "authenticated/authority-commit.json",
+    "authenticated/independent-commit.json",
+    "authenticated/raw",
+    "authenticated/source-commit.json"
+  ],
+  "authenticated_server_run_state_required": true,
+  "authority_binding": {
+    "activation_state": "authorized_pending_evidence",
+    "authority_base_commit": "6495da3f5e6a5f797504dbd688a8490e1d44c6e9",
+    "authority_base_tree": "f0b71975e74a11ba0c98fd75d6cf8b5c5fc422a0",
+    "authority_head_commit": null,
+    "authority_head_tree": null,
+    "authorized_run_attempt": 1,
+    "independent_bootstrap_commit": null,
+    "independent_bootstrap_tree": null,
+    "independent_validator_sha256": "32052fbddfe07fcf837a1ec496e5391ae1464627a3792fd070150d1d982ba643",
+    "independent_workflow_sha256": "b63b15a8e8102b1032f626fffa4d62a187165166de11989d13215f2893ec331c",
+    "live_evidence_derived_from": "authenticated-github-server-state-at-runtime",
+    "no_fallback": true,
+    "reason": "The exact acc-releaser activation lane is authorized and every reviewed repository, workflow, helper and blob binding is pinned, but no run has executed yet, so every live identifier stays unpinned and is derived from authenticated GitHub server state at runtime.",
+    "remediation": "A later independently reviewed candidate may pin the live identifiers exactly once one authorized attempt-1 run head, tree, artifact, envelope and receipt digest have been observed and read back.",
+    "source_bootstrap_commit": null,
+    "source_bootstrap_tree": null
+  },
+  "authority_repository": "chrizzatsu/acc-attestation-authority",
+  "caller_selectable_inputs": [],
+  "caller_selectable_paths_forbidden": true,
+  "caller_supplied_envelope_bytes_forbidden": true,
+  "caller_supplied_receipt_bytes_forbidden": true,
+  "contract": "acc-authority-v2-protected-source-bootstrap",
+  "exclusive_artifact_member_write_required": true,
+  "final_authority_approval_forbidden": true,
+  "helper": {
+    "path": "scripts/export_kanban_review_v2.py",
+    "sha256": "7206b39ca7098b9117d65a8e4569bd91137dddd1bed11b26c4ac26c46ac13959"
+  },
+  "independent_review_repository": "chrizzatsu/acc-authority-independent-review",
+  "live_identifiers_never_pre_pinned": [
+    "authority_head_commit",
+    "authority_head_tree",
+    "independent_bootstrap_commit",
+    "independent_bootstrap_tree",
+    "source_bootstrap_commit",
+    "source_bootstrap_tree"
+  ],
+  "one_activation": {
+    "additional_run_ids_excluded_before_protected_actions": true,
+    "authenticated_disable_readback_required": true,
+    "disable_covers_failure_paths": true,
+    "exhaustive_server_link_pagination_required": true,
+    "expected_workflow_state_before_protected_actions": "disabled_manually",
+    "fixed_page_count_forbidden": true,
+    "gate_phase": "gate",
+    "maximum_captured_run_pages": 100,
+    "reason": "GITHUB_RUN_ATTEMPT == 1 only blocks reruns of one run: a second workflow_dispatch is a different run id that is also attempt 1. The sealed workflow is therefore disabled by a separate write-scoped job before any protected action, that disable is read back read-only by the export lane, the complete run inventory is read back through one exhaustive rel=\"next\" traversal bounded by a finite fail-closed page cap, and the gate phase refuses any additional authorized run before the lane clones or writes anything.",
+    "runs_per_page": 100,
+    "workflow_disabled_before_protected_actions": true
+  },
+  "phases": [
+    "export",
+    "gate"
+  ],
+  "protected_review_result": {
+    "activation_authorized": false,
+    "activation_findings": [
+      {
+        "closure": "F8",
+        "finding": "F8-AUTHENTICATED-SOURCE-CHAIN-UNAVAILABLE"
+      }
+    ],
+    "activation_state": "authorized_pending_evidence",
+    "approved": false,
+    "classifications": {
+      "hard_stop_class": null
+    },
+    "closure_matrix": {
+      "F1": true,
+      "F10": true,
+      "F11": true,
+      "F12": false,
+      "F2": true,
+      "F3": true,
+      "F4": true,
+      "F5": true,
+      "F6": true,
+      "F7": true,
+      "F8": false,
+      "F9": true
+    },
+    "findings": [
+      {
+        "closure": "F8",
+        "finding": "F8-AUTHENTICATED-SOURCE-CHAIN-UNAVAILABLE"
+      },
+      {
+        "closure": "F12",
+        "finding": "F12-EXCLUSIVE-PUBLICATION-UNAVAILABLE"
+      }
+    ],
+    "findings_count": 2,
+    "protected_identity_asset": {
+      "clerk_api_instance_id_fingerprint_sha256": "61ca182dce2bc4287d70a86b663dca397215613a10ed5f598f99cf11d63abb07",
+      "clerk_publishable_key_fingerprint_sha256": "61b16bead7b0155c4e1d23ce83031702c5fce95f3799ea5a2a0f501e99cc057c",
+      "directory_mode": "0700",
+      "environment_type": "development",
+      "file_mode": "0600",
+      "present": true,
+      "raw_api_instance_id_present": true,
+      "raw_publishable_key_present": true,
+      "sha256": "54cbc72994f8d2e2aefa5916bb02c3a3c26b5db11fbad86c9281fd4aa970f222"
+    },
+    "receipt_type": "acc-authority-v2-preissuance-independent-review",
+    "release_authorized": false,
+    "review_outcome": "ACTIVATION_ONLY",
+    "reviewer_profile": "acc-reviewer",
+    "schema_version": 2
+  },
+  "publication_performed": false,
+  "repository": "chrizzatsu/acc-authority-protected-source",
+  "repository_created": false,
+  "reviewer_task_id": "t_c298fca4",
+  "schema_version": 1,
+  "workflow": {
+    "job_environment": "protected-kanban-export",
+    "path": ".github/workflows/export-kanban-review-v2.yml",
+    "ref": "refs/heads/main",
+    "sha256": "a56b0c601647960ca06f49c0af73b321c83aae16768d24693d54af39b336dc20",
+    "trigger": "workflow_dispatch"
+  },
+  "workflow_dispatched": false,
+  "zero_spend_required": true
+}

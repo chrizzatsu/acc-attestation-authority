@@ -1,0 +1,150 @@
+{
+  "actions_concurrency_is_exhaustive": false,
+  "activation_precondition": {
+    "no_fallback": true,
+    "reason": "GitHub documents neither a durable server-owned pre-draft publication state, an atomic/versioned draft-to-immutable transition, nor an exhaustive server-owned proof excluding every competing release, asset and tag writer, so no fallible publication write is exactly reconstructable.",
+    "remediation": "A later independently reviewed candidate may enable publication only after documented server semantics make every fallible write exactly reconstructable.",
+    "state": "unavailable"
+  },
+  "authoritative_semantic_citations": [
+    {
+      "documented_behaviour": "GitHub documents HTTP 201 Created as the sole success response of Create a reference; it records only that this request created the ref, never that this request is the only writer of the release, the release assets or the tag.",
+      "endpoint": "POST /repos/{owner}/{repo}/git/refs",
+      "proves_exclusivity": false,
+      "source": "https://docs.github.com/en/rest/git/refs#create-a-reference",
+      "status": 201
+    },
+    {
+      "documented_behaviour": "GitHub documents HTTP 409 as a conflict response. A conflict is not an authenticated readback of an existing object, so it proves neither that the ref exists nor who created it.",
+      "endpoint": "POST /repos/{owner}/{repo}/git/refs",
+      "proves_exclusivity": false,
+      "source": "https://docs.github.com/en/rest/git/refs#create-a-reference",
+      "status": 409
+    },
+    {
+      "documented_behaviour": "GitHub documents HTTP 422 as a generic validation failure covering many causes. It is never documented as a unique already-exists signal, so it proves nothing about an existing claim.",
+      "endpoint": "POST /repos/{owner}/{repo}/git/refs",
+      "proves_exclusivity": false,
+      "source": "https://docs.github.com/en/rest/git/refs#create-a-reference",
+      "status": 422
+    },
+    {
+      "documented_behaviour": "The Releases API documents no conditional request, entity-tag precondition, version token or compare-and-swap on the release or release-asset resource, so no publication write can be made conditional on a previously observed state.",
+      "endpoint": "POST /repos/{owner}/{repo}/releases",
+      "proves_exclusivity": false,
+      "source": "https://docs.github.com/en/rest/releases/releases",
+      "status": 201
+    }
+  ],
+  "contract": "acc-authority-v2-exclusive-publication-writer-precondition",
+  "documented_atomic_draft_asset_tag_transition_available": false,
+  "documented_exhaustive_writer_inventory_available": false,
+  "every_publication_write_prohibited": true,
+  "exclusive_transition_impossibility": {
+    "atomic_transition_available": false,
+    "binds_exact_activation_sha": false,
+    "binds_verified_immutable_asset_snapshots": false,
+    "compare_and_swap_available": false,
+    "documented_github_release_api_provides_it": false,
+    "excludes_every_authorized_writer": false,
+    "local_simulation_is_not_evidence": true,
+    "reason": "The documented GitHub release APIs expose no conditional request, no entity-tag precondition, no version token and no compare-and-swap on the release resource, and no documented endpoint performs the draft creation, the asset uploads, the immutable transition and the tag creation as one server-owned transaction. Nothing documented therefore binds the exact activation commit SHA and the verified immutable asset snapshots against every writer that the platform authorizes, so exclusivity cannot be established and no fallible publication write is exactly reconstructable.",
+    "required_primitive": "an exhaustive exclusive/compare-and-swap/atomic release transition that binds the exact activation commit SHA and the verified immutable asset snapshots against every authorized writer",
+    "self_asserted_exclusivity_rejected": true
+  },
+  "f12_closed": false,
+  "github_release_cas_supported": false,
+  "irreversible_publication_forbidden": true,
+  "known_writer_model": {
+    "enumerated_writer_classes": [
+      "github_app_installation_with_contents_write",
+      "organization_or_repository_admin",
+      "repository_actions_workflow_with_contents_write",
+      "repository_collaborator_with_push_access",
+      "repository_owner",
+      "user_personal_access_token_with_repository_scope",
+      "user_ssh_or_https_git_push"
+    ],
+    "exhaustive": false,
+    "limits": [
+      "GitHub documents no endpoint that enumerates every principal currently authorized to create or modify a release, a release asset or a tag.",
+      "Installation, collaborator, team and admin grants can change between any read and any subsequent write, and no documented read returns a version token that a later write could be made conditional on.",
+      "Ruleset and branch/tag protection readbacks constrain refs only; they do not constrain the release or the release-asset resources.",
+      "Actions concurrency groups serialize only this repository's own runs, not any other authorized writer."
+    ],
+    "unbounded_writer_classes": [
+      "future_or_unenumerated_platform_principals",
+      "platform_internal_or_support_operated_writers"
+    ]
+  },
+  "missing_exhaustive_writer_proof": {
+    "attempted_live_inventory_endpoints": [
+      {
+        "endpoint": "GET /repos/{owner}/{repo}/collaborators",
+        "insufficient_because": "It lists only collaborators, omits GitHub App installations, organization and enterprise administrators and any platform operated principal, and may change between this read and any later write.",
+        "returns": "the current collaborator list only"
+      },
+      {
+        "endpoint": "GET /repos/{owner}/{repo}/installations",
+        "insufficient_because": "It lists installations at read time only, returns no version token a later write could be made conditional on, and does not constrain the release or release-asset resources at all.",
+        "returns": "the current GitHub App installation list only"
+      },
+      {
+        "endpoint": "GET /repos/{owner}/{repo}/rulesets",
+        "insufficient_because": "Rulesets and branch or tag protection constrain refs only. They neither enumerate nor exclude writers of a release or a release asset.",
+        "returns": "ref-scoped rules only"
+      },
+      {
+        "endpoint": "GET /repos/{owner}/{repo}/releases",
+        "insufficient_because": "An exhaustive release listing describes existing objects at read time. It identifies no set of principals authorized to create or modify a release afterwards.",
+        "returns": "existing releases at read time only"
+      }
+    ],
+    "proof_available": false,
+    "required_proof": "An authenticated, server-owned, exhaustive enumeration of every principal authorized to create or modify a release, a release asset or a tag in this repository, valid for the whole irreversible transition and bound to the exact activation commit SHA and the verified immutable asset snapshots.",
+    "simulated_or_self_asserted_proof_rejected": true,
+    "unavailable_because": "GitHub documents no endpoint that returns such an enumeration, and no documented write can be made conditional on one. Installation, collaborator, team, organization and platform grants may change between any read and any subsequent write, so even a complete read would be stale at write time.",
+    "writer_set_is_unbounded": true
+  },
+  "post_patch_race_detection_is_closure": false,
+  "prohibited_writes": [
+    "DELETE /repos/{repository}/releases/{release_id}",
+    "PATCH /repos/{repository}/releases/{release_id}",
+    "POST /repos/{repository}/git/refs",
+    "POST /repos/{repository}/git/tags",
+    "POST /repos/{repository}/releases",
+    "POST uploads.github.com release assets"
+  ],
+  "publication_performed": false,
+  "publication_writes_prohibited": true,
+  "reconciliation": {
+    "discovers": [
+      "draft_id",
+      "durable_claim",
+      "final_tag",
+      "asset_name_size_sha256_plan",
+      "immutable_release_guard",
+      "exact_tag_ruleset_guard",
+      "publication_plan_sha256"
+    ],
+    "exact": true,
+    "exhaustive_release_listing": true,
+    "idempotent": true,
+    "read_only": true
+  },
+  "release_authorized": false,
+  "repository": "chrizzatsu/acc-attestation-authority",
+  "required_before_irreversible_publication": {
+    "complete_asset_name_size_sha256_plan_bound": true,
+    "draft_id_bound": true,
+    "every_competing_release_and_asset_writer_excluded": true,
+    "every_competing_tag_writer_excluded": true,
+    "exact_release_name_and_body_bound": true,
+    "exact_tag_ruleset_guard_bound": true,
+    "final_tag_bound_to_activation_commit": true,
+    "immutable_release_guard_bound": true
+  },
+  "schema_version": 1,
+  "tag_rulesets_control_release_asset_writers": false,
+  "zero_spend_required": true
+}

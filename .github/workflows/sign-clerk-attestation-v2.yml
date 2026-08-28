@@ -1,0 +1,628 @@
+name: Issue immutable ACC Authority-v2 evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_head:
+        description: Exact independently reviewed candidate head now at main
+        required: true
+        type: string
+      candidate_tree:
+        description: Exact independently reviewed candidate tree
+        required: true
+        type: string
+      canonical_diff_sha256:
+        description: SHA-256 of canonical binary full-index base-to-head diff
+        required: true
+        type: string
+      review_receipt_sha256:
+        description: SHA-256 of canonical zero-finding independent review receipt
+        required: true
+        type: string
+      independent_review_run_id:
+        description: Exact pinned independent-review workflow run containing the signed receipt
+        required: true
+        type: string
+      issuance_nonce:
+        description: Unique lowercase 64-hex issuance nonce
+        required: true
+        type: string
+      release_tag:
+        description: Exact immutable release tag
+        required: true
+        type: string
+      release_name:
+        description: Exact immutable release name
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: immutable-clerk-attestation-v2
+  cancel-in-progress: false
+
+jobs:
+  issue:
+    runs-on: ubuntu-latest
+    environment: attestation
+    env:
+      AUTHORITY_V2_RUNTIME: ${{ runner.temp }}/authority-v2-runtime
+      # The recovery round of this exact runner attempt. The head, tree and
+      # commit count of the runner-state artifact are derived from the
+      # immutable checkout itself, never declared.
+      ACC_RECOVERY_ROUND: ${{ github.run_attempt }}
+      CANDIDATE_HEAD: ${{ inputs.candidate_head }}
+      CANDIDATE_TREE: ${{ inputs.candidate_tree }}
+      CANDIDATE_DIFF: ${{ inputs.canonical_diff_sha256 }}
+      REVIEW_HASH: ${{ inputs.review_receipt_sha256 }}
+      INDEPENDENT_REVIEW_RUN_ID: ${{ inputs.independent_review_run_id }}
+      ISSUANCE_NONCE: ${{ inputs.issuance_nonce }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_NAME: ${{ inputs.release_name }}
+    steps:
+      - name: Close inherited Git credential scopes before issuance checkout
+        run: |
+          set -euo pipefail
+          umask 077
+          readonly INVENTORY="$RUNNER_TEMP/authority-v2-git-config-inventory"
+          set +e
+          git config --show-origin --show-scope --name-only \
+            --get-regexp '^http\..*\.extraheader$' > "$INVENTORY" 2>/dev/null
+          inherited_status=$?
+          set -e
+          if (( inherited_status != 0 && inherited_status != 1 )); then
+            echo 'credential scope closure could not enumerate effective Git configuration' >&2
+            exit 1
+          fi
+          HEADER_NAMES=(http.extraHeader)
+          while IFS=$'\t' read -r scope origin header; do
+            [[ -n "$header" ]]
+            HEADER_NAMES+=("$header")
+            printf 'neutralizing inherited Git extraheader: %s %s %s\n' \
+              "$scope" "$origin" "$header" >&2
+          done < "$INVENTORY"
+          readonly CLOSED_GIT_HOME="$RUNNER_TEMP/authority-v2-git-home"
+          readonly CLOSED_GIT_XDG="$RUNNER_TEMP/authority-v2-git-xdg"
+          readonly CLOSED_GIT_GLOBAL="$RUNNER_TEMP/authority-v2-git-global.config"
+          mkdir -p "$CLOSED_GIT_HOME" "$CLOSED_GIT_XDG"
+          : > "$CLOSED_GIT_GLOBAL"
+          export HOME="$CLOSED_GIT_HOME"
+          export XDG_CONFIG_HOME="$CLOSED_GIT_XDG"
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_SYSTEM=/dev/null
+          export GIT_CONFIG_GLOBAL="$CLOSED_GIT_GLOBAL"
+          unset GIT_CONFIG_PARAMETERS
+          export GIT_CONFIG_COUNT="${#HEADER_NAMES[@]}"
+          index=0
+          for header in "${HEADER_NAMES[@]}"; do
+            key_variable="GIT_CONFIG_KEY_$index"
+            value_variable="GIT_CONFIG_VALUE_$index"
+            printf -v "$key_variable" '%s' "$header"
+            printf -v "$value_variable" '%s' ''
+            export "$key_variable" "$value_variable"
+            index=$((index + 1))
+          done
+          for header in "${HEADER_NAMES[@]}"; do
+            effective_value=missing
+            while IFS= read -r value; do
+              effective_value="$value"
+            done < <(git config --get-all "$header")
+            if [[ -n "$effective_value" ]]; then
+              echo 'credential residue remains after all-scope closure' >&2
+              exit 1
+            fi
+          done
+          {
+            echo "HOME=$HOME"
+            echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+            echo "GIT_CONFIG_NOSYSTEM=$GIT_CONFIG_NOSYSTEM"
+            echo "GIT_CONFIG_SYSTEM=$GIT_CONFIG_SYSTEM"
+            echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+            echo 'GIT_CONFIG_PARAMETERS='
+            echo "GIT_CONFIG_COUNT=$GIT_CONFIG_COUNT"
+            index=0
+            for header in "${HEADER_NAMES[@]}"; do
+              key_variable="GIT_CONFIG_KEY_$index"
+              echo "$key_variable=${!key_variable}"
+              echo "GIT_CONFIG_VALUE_$index="
+              index=$((index + 1))
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Validate dispatch and exact runtime context
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$GITHUB_REPOSITORY" == 'chrizzatsu/acc-attestation-authority' ]]
+          [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+          [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]
+          [[ "$GITHUB_RUN_ATTEMPT" == '1' ]]
+          [[ "$GITHUB_SHA" == "$CANDIDATE_HEAD" ]]
+          [[ "$CANDIDATE_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_DIFF" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$REVIEW_HASH" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$INDEPENDENT_REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ISSUANCE_NONCE" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_TAG" == 'clerk-instance-attestation-v2' ]]
+          [[ "$RELEASE_NAME" == 'ACC Clerk instance attestation v2' ]]
+          mkdir "$AUTHORITY_V2_RUNTIME"
+
+      - name: Checkout exact reviewed candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.candidate_head }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Install pinned keyless Sigstore client
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+
+      - name: Enforce reviewed zero-spend guard App prerequisite
+        run: |
+          set -euo pipefail
+          jq -e '
+            .transport_role == "administration-read-guards-only" and
+            .repository_selection == ["chrizzatsu/acc-attestation-authority"] and
+            .token_permissions == {"administration":"read"} and
+            .environment_gate == "attestation" and
+            .zero_spend_required == true and
+            .activation_precondition.state == "ready" and
+            .activation_precondition.no_fallback == true
+          ' github-app-guard-v2-contract.json >/dev/null
+
+      - name: Acquire narrow administration-read guard token
+        id: guard-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.AUTHORITY_GUARD_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTHORITY_GUARD_APP_PRIVATE_KEY }}
+          owner: chrizzatsu
+          repositories: acc-attestation-authority
+          permission-administration: read
+
+      - name: Validate exact guard App identity
+        env:
+          GUARD_APP_SLUG: ${{ steps.guard-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          [[ "$GUARD_APP_SLUG" == "$(jq -er .github_app_slug github-app-guard-v2-contract.json)" ]]
+
+      - name: Acquire independent-review artifact token
+        id: review-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.AUTHORITY_REVIEW_READER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTHORITY_REVIEW_READER_APP_PRIVATE_KEY }}
+          owner: chrizzatsu
+          repositories: acc-authority-independent-review
+          permission-actions: read
+          permission-contents: read
+
+      - name: Validate exact independent-review run and workflow bytes
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/chrizzatsu/acc-authority-independent-review/actions/runs/$INDEPENDENT_REVIEW_RUN_ID" > "$AUTHORITY_V2_RUNTIME/independent-review-run.json"
+          REVIEW_HEAD="$(jq -er --argjson run "$INDEPENDENT_REVIEW_RUN_ID" '
+            select(
+              .id == $run and
+              .run_attempt == 1 and
+              .event == "workflow_dispatch" and
+              .head_branch == "main" and
+              .path == ".github/workflows/review-authority-v2.yml" and
+              .conclusion == "success" and
+              .head_repository.full_name == "chrizzatsu/acc-authority-independent-review"
+            ) | .head_sha
+          ' "$AUTHORITY_V2_RUNTIME/independent-review-run.json")"
+          [[ "$REVIEW_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/chrizzatsu/acc-authority-independent-review/contents/.github/workflows/review-authority-v2.yml?ref=$REVIEW_HEAD" > "$AUTHORITY_V2_RUNTIME/independent-review-workflow.yml"
+          [[ "$(sha256sum "$AUTHORITY_V2_RUNTIME/independent-review-workflow.yml" | cut -d' ' -f1)" == "$(jq -er .workflow.sha256 independent-review-bootstrap-v2/bootstrap-contract.json)" ]]
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/chrizzatsu/acc-authority-independent-review/contents/scripts/verify_kanban_review_v2.py?ref=$REVIEW_HEAD" > "$AUTHORITY_V2_RUNTIME/independent-review-validator.py"
+          [[ "$(sha256sum "$AUTHORITY_V2_RUNTIME/independent-review-validator.py" | cut -d' ' -f1)" == "$(jq -er .validator.sha256 independent-review-bootstrap-v2/bootstrap-contract.json)" ]]
+          python3 scripts/verify_authority_v2.py --derive-independent-bootstrap-binding --independent-review-run-id "$INDEPENDENT_REVIEW_RUN_ID" --review-head "$REVIEW_HEAD" --output "$AUTHORITY_V2_RUNTIME/independent-bootstrap-binding.json"
+          [[ "$REVIEW_HEAD" == "$(jq -er .independent_bootstrap_commit "$AUTHORITY_V2_RUNTIME/independent-bootstrap-binding.json")" ]]
+          [[ "$(jq -er .independent_bootstrap_tree "$AUTHORITY_V2_RUNTIME/independent-bootstrap-binding.json")" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$INDEPENDENT_REVIEW_RUN_ID" == "$(jq -er '.run_id | tostring' "$AUTHORITY_V2_RUNTIME/independent-bootstrap-binding.json")" ]]
+
+      - name: Download exact independently signed receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authority-v2-signed-review-t_c298fca4
+          path: ${{ runner.temp }}/authority-v2-runtime/independent-review
+          repository: chrizzatsu/acc-authority-independent-review
+          run-id: ${{ inputs.independent_review_run_id }}
+          github-token: ${{ steps.review-token.outputs.token }}
+
+      - name: Inventory the exact downloaded signed review artifact
+        run: |-
+          python3 scripts/verify_authority_v2.py --verify-signed-review-artifact-inventory "$AUTHORITY_V2_RUNTIME/independent-review"
+
+      - name: Download exact external activation review artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authority-v2-external-activation-review-t_c298fca4
+          path: ${{ runner.temp }}/authority-v2-runtime/external-activation-review
+          repository: chrizzatsu/acc-authority-independent-review
+          run-id: ${{ inputs.independent_review_run_id }}
+          github-token: ${{ steps.review-token.outputs.token }}
+
+      - name: Assemble the sealed live activation evidence and derive F8
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+          INDEPENDENT_REVIEW_RUN_ID: ${{ inputs.independent_review_run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          REVIEWER='chrizzatsu/acc-authority-independent-review'
+          EVIDENCE="$(dirname "$GITHUB_WORKSPACE")/acc-live-activation-evidence"
+          rm -rf "$EVIDENCE"
+          mkdir -p "$EVIDENCE"
+          # Both artifacts are identified by the canonical server-returned id,
+          # name and digest, then downloaded by that id and recomputed byte by
+          # byte, before a single byte is placed in the sealed inventory. A
+          # matching name is never accepted in place of matching bytes. Every
+          # request here is a documented read-only GET.
+          #
+          # `--paginate` traverses every page the server offers via its own
+          # Link headers, so a second or later page can never hide the
+          # artifact that really matched.
+          ARTIFACTS="$(gh api --paginate \
+            "repos/$REVIEWER/actions/runs/$INDEPENDENT_REVIEW_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[]' | jq -es '{artifacts: .}')"
+          for name in authority-v2-signed-review-t_c298fca4 \
+                      authority-v2-external-activation-review-t_c298fca4 ; do
+            # Exactly one non-expired artifact may carry this name, and the
+            # id, the digest and the declared size all come from that one
+            # selected object rather than from independent lookups.
+            selected="$(printf '%s' "$ARTIFACTS" | jq -er --arg n "$name" \
+              '[.artifacts[] | select(.name == $n and .expired == false)] | if length == 1 then .[0] else empty end')"
+            id="$(printf '%s' "$selected" | jq -er .id)"
+            [[ "$id" =~ ^[1-9][0-9]*$ ]]
+            digest="$(printf '%s' "$selected" | jq -er .digest)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            declared_size="$(printf '%s' "$selected" | jq -er .size_in_bytes)"
+            [[ "$declared_size" =~ ^[1-9][0-9]*$ ]]
+            # The archive is fetched by canonical server id, never by name,
+            # and it is kept beside the evidence under exactly that id, so the
+            # closure opens the real ZIP the server answered rather than a
+            # locally written summary of it.
+            archive="$EVIDENCE/artifact-$id.zip"
+            gh api "repos/$REVIEWER/actions/artifacts/$id/zip" > "$archive"
+            archive_size="$(wc -c < "$archive" | tr -d ' ')"
+            [[ "$archive_size" == "$declared_size" ]]
+            archive_sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
+            [[ "$archive_sha256" =~ ^[0-9a-f]{64}$ ]]
+            # The server-returned digest and the recomputed archive digest are
+            # one statement. A digest that is merely well formed is refused.
+            [[ "$digest" == "sha256:$archive_sha256" ]]
+            # Validate the complete ZipInfo inventory before reading a member.
+            # The verifier rejects aliases, traversal, encrypted/non-regular
+            # entries and per-member/aggregate size excess before hashing.
+            member_digests="$(python3 scripts/verify_authority_v2.py \
+              --review-artifact-member-digests "$archive" \
+              --review-artifact-name "$name")"
+            jq -n --arg name "$name" --argjson id "$id" --arg digest "$digest" \
+              --arg archive_sha256 "$archive_sha256" \
+              --argjson archive_size "$archive_size" \
+              --argjson members "$member_digests" \
+              '{archive_sha256: $archive_sha256, archive_size: $archive_size, artifact_id: $id, digest: $digest, members: $members, name: $name}' \
+              > "$EVIDENCE/artifact-identity-$name.json"
+          done
+          # The canonically downloaded archives stay in the evidence set.
+          # Consumed by the one production closure below, never merely logged.
+          jq -es 'sort_by(.name)' \
+            "$EVIDENCE"/artifact-identity-*.json \
+            > "$EVIDENCE/authenticated-artifact-identity.json"
+          rm -f "$EVIDENCE"/artifact-identity-*.json
+          # The fixed sealed inventory the closure CLI consumes, and nothing else.
+          cp "$AUTHORITY_V2_RUNTIME/independent-review/kanban-review-envelope.json" \
+             "$EVIDENCE/kanban-review-envelope.json"
+          cp "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.json" \
+             "$EVIDENCE/preissuance-review-receipt.json"
+          # The third member the signed-review upload really carries. Without
+          # it the closure never authenticates the reviewer's own Sigstore
+          # bundle over the pre-issuance receipt.
+          cp "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.sigstore.json" \
+             "$EVIDENCE/preissuance-review-receipt.sigstore.json"
+          cp "$AUTHORITY_V2_RUNTIME/external-activation-review/external-activation-review-receipt.json" \
+             "$EVIDENCE/external-activation-review-receipt.json"
+          cp "$AUTHORITY_V2_RUNTIME/external-activation-review/external-activation-review-receipt.sigstore.json" \
+             "$EVIDENCE/external-activation-review-receipt.sigstore.json"
+          # The authenticated run and job timeline, from the server only.
+          RUN="$(gh api "repos/$REVIEWER/actions/runs/$INDEPENDENT_REVIEW_RUN_ID")"
+          JOBS="$(gh api "repos/$REVIEWER/actions/runs/$INDEPENDENT_REVIEW_RUN_ID/jobs?per_page=100&page=1")"
+          jq -n \
+            --arg repository "$REVIEWER" \
+            --arg workflow_path '.github/workflows/review-authority-v2.yml' \
+            --arg head "$(printf '%s' "$RUN" | jq -er .head_sha)" \
+            --argjson run_id "$INDEPENDENT_REVIEW_RUN_ID" \
+            --argjson run_attempt "$(printf '%s' "$RUN" | jq -er .run_attempt)" \
+            --argjson run_started "$(printf '%s' "$RUN" | jq -er '.run_started_at | fromdateiso8601')" \
+            --argjson job_started "$(printf '%s' "$JOBS" | jq -er '[.jobs[] | select(.name == "review")][0].started_at | fromdateiso8601')" \
+            --argjson job_completed "$(printf '%s' "$JOBS" | jq -er '[.jobs[] | select(.name == "review")][0].completed_at | fromdateiso8601')" \
+            '{independent_bootstrap_commit: $head, job_completed_at: $job_completed, job_started_at: $job_started, repository: $repository, run_attempt: $run_attempt, run_id: $run_id, run_started_at: $run_started, workflow_path: $workflow_path}' \
+            > "$EVIDENCE/authenticated-run-timeline.json"
+          # The one derived production transition. It authenticates the
+          # exporter artifact, the external review receipt against this exact
+          # clean checkout and the Sigstore bundle against the pinned trust,
+          # derives F8 internally and passes the derived evidence to Authority.
+          # Unresolved or null state exits non-zero and this job fails closed.
+          python3 scripts/pin_source_chain_activation_v2.py --phase closure \
+            > "$AUTHORITY_V2_RUNTIME/derived-activation-closure.json"
+          [[ "$(jq -er .derived_closure_sha256 "$AUTHORITY_V2_RUNTIME/derived-activation-closure.json")" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$(jq -er .f8_closed "$AUTHORITY_V2_RUNTIME/derived-activation-closure.json")" == "true" ]]
+          [[ "$(jq -er .live_evidence_authenticated "$AUTHORITY_V2_RUNTIME/derived-activation-closure.json")" == "true" ]]
+
+      - name: Recompute candidate and authenticate independent receipt bytes
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_HEAD" ]]
+          [[ "$(git rev-parse HEAD^{tree})" == "$CANDIDATE_TREE" ]]
+          [[ "$(git rev-parse HEAD^)" == '6495da3f5e6a5f797504dbd688a8490e1d44c6e9' ]]
+          [[ "$(git rev-list --count '6495da3f5e6a5f797504dbd688a8490e1d44c6e9..HEAD')" == 1 ]]
+          [[ "$(git rev-list --merges --count '6495da3f5e6a5f797504dbd688a8490e1d44c6e9..HEAD')" == 0 ]]
+          git diff --binary --full-index --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ 6495da3f5e6a5f797504dbd688a8490e1d44c6e9 HEAD -- > "$AUTHORITY_V2_RUNTIME/candidate.diff"
+          [[ "$(sha256sum "$AUTHORITY_V2_RUNTIME/candidate.diff" | cut -d' ' -f1)" == "$CANDIDATE_DIFF" ]]
+          [[ -f "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.json" && ! -L "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.json" ]]
+          [[ -f "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.sigstore.json" && ! -L "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.sigstore.json" ]]
+          [[ -f "$AUTHORITY_V2_RUNTIME/independent-review/kanban-review-envelope.json" && ! -L "$AUTHORITY_V2_RUNTIME/independent-review/kanban-review-envelope.json" ]]
+          install -m 0600 "$AUTHORITY_V2_RUNTIME/independent-review/kanban-review-envelope.json" "$AUTHORITY_V2_RUNTIME/kanban-review-envelope.json"
+          install -m 0600 "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.json" "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.json"
+          [[ "$(sha256sum "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.json" | cut -d' ' -f1)" == "$REVIEW_HASH" ]]
+          install -m 0600 "$AUTHORITY_V2_RUNTIME/independent-review/preissuance-review-receipt.sigstore.json" "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.sigstore.json"
+          COSIGN_PATH="$(command -v cosign)"
+          python3 scripts/verify_authority_v2.py --authenticate-preissuance-review-bundle --preissuance-review-receipt-bundle "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.sigstore.json" --preissuance-review-receipt "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.json" --cosign "$COSIGN_PATH"
+
+      - name: Read back run job approval and OIDC claims
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$AUTHORITY_V2_RUNTIME/run.raw.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > "$AUTHORITY_V2_RUNTIME/jobs.raw.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > "$AUTHORITY_V2_RUNTIME/approvals.raw.json"
+          JOB_ID="$(jq -er --argjson run "$GITHUB_RUN_ID" '[.jobs[] | select(.name == "issue" and .run_id == $run and .status == "in_progress")] | if length == 1 then .[0].id else error("exact job absent or ambiguous") end' "$AUTHORITY_V2_RUNTIME/jobs.raw.json")"
+          oidc_response="$(curl --fail --silent --show-error -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
+          printf '%s' "$oidc_response" | jq -er .value > "$AUTHORITY_V2_RUNTIME/oidc.jwt"
+          python3 -c 'import base64,json,pathlib; p=pathlib.Path("'"$AUTHORITY_V2_RUNTIME"'/oidc.jwt"); s=p.read_text().strip().split("."); assert len(s)==3; b=s[1]+"="*(-len(s[1])%4); pathlib.Path("'"$AUTHORITY_V2_RUNTIME"'/oidc.raw.json").write_bytes(json.dumps(json.loads(base64.urlsafe_b64decode(b)),sort_keys=True,separators=(",",":")).encode()+b"\n")'
+          jq -e --argjson run "$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" --arg actor "$GITHUB_ACTOR" '
+            .id == $run and .run_attempt == 1 and .head_sha == $sha and .head_branch == "main" and .event == "workflow_dispatch" and .status == "in_progress" and .path == ".github/workflows/sign-clerk-attestation-v2.yml" and .actor.login == $actor' "$AUTHORITY_V2_RUNTIME/run.raw.json" >/dev/null
+          jq -e '[.[] | select(.state == "approved" and ([.environments[].name] == ["attestation"]))] | length == 1' "$AUTHORITY_V2_RUNTIME/approvals.raw.json" >/dev/null
+          jq -cS -e -n \
+            --arg candidate_head "$CANDIDATE_HEAD" --arg candidate_tree "$CANDIDATE_TREE" \
+            --arg candidate_diff "$CANDIDATE_DIFF" --arg review_hash "$REVIEW_HASH" \
+            --arg nonce "$ISSUANCE_NONCE" --arg release_tag "$RELEASE_TAG" --arg release_name "$RELEASE_NAME" \
+            --argjson job_id "$JOB_ID" \
+            --slurpfile run "$AUTHORITY_V2_RUNTIME/run.raw.json" \
+            --slurpfile jobs "$AUTHORITY_V2_RUNTIME/jobs.raw.json" \
+            --slurpfile approvals "$AUTHORITY_V2_RUNTIME/approvals.raw.json" \
+            --slurpfile oidc "$AUTHORITY_V2_RUNTIME/oidc.raw.json" \
+            '{dispatch_inputs:{candidate_head:$candidate_head,candidate_tree:$candidate_tree,canonical_diff_sha256:$candidate_diff,review_receipt_sha256:$review_hash,issuance_nonce:$nonce,release_tag:$release_tag,release_name:$release_name},run:($run[0]|{id,run_attempt,head_sha,head_branch,event,status,actor:.actor.login,workflow_path:.path}),job:([$jobs[0].jobs[]|select(.id==$job_id)][0]|{id,run_id,name,status}),approval:([$approvals[0][]|select(.state=="approved" and ([.environments[].name]==["attestation"]))][0]|{environments:[.environments[]|{name}],state,user:(.user|{login})}),oidc:($oidc[0]|{iss,aud,sub,repository,workflow_ref,workflow_sha,ref,event_name,actor,environment,run_id,run_attempt})}' > "$AUTHORITY_V2_RUNTIME/readbacks.json"
+          python3 scripts/collect_github_issuance_v2.py --readbacks "$AUTHORITY_V2_RUNTIME/readbacks.json" --candidate-head "$CANDIDATE_HEAD" --candidate-tree "$CANDIDATE_TREE" --canonical-diff-sha256 "$CANDIDATE_DIFF" --review-receipt-sha256 "$REVIEW_HASH" --output "$AUTHORITY_V2_RUNTIME/github-issuance.json" > "$AUTHORITY_V2_RUNTIME/collector-result.json"
+          jq -er .github_issuance_sha256 "$AUTHORITY_V2_RUNTIME/collector-result.json" | sed 's/^/GITHUB_ISSUANCE_SHA256=/' >> "$GITHUB_ENV"
+
+      - name: Verify environment policy and exact candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_GUARD_APP_TOKEN: ${{ steps.guard-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY" > "$AUTHORITY_V2_RUNTIME/repository.json"
+          ENVIRONMENT_STATUS="$(curl --silent --show-error --output "$AUTHORITY_V2_RUNTIME/environment.json" --write-out '%{http_code}' -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$GITHUB_REPOSITORY/environments/attestation")"
+          gh api "repos/$GITHUB_REPOSITORY/environments/attestation/secrets" > "$AUTHORITY_V2_RUNTIME/environment-secrets.json"
+          BRANCH_POLICIES_STATUS="$(curl --silent --show-error --output "$AUTHORITY_V2_RUNTIME/branch-policies.json" --write-out '%{http_code}' -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$GITHUB_REPOSITORY/environments/attestation/deployment-branch-policies")"
+          GH_TOKEN="$GH_GUARD_APP_TOKEN" gh api "repos/$GITHUB_REPOSITORY/immutable-releases" > "$AUTHORITY_V2_RUNTIME/immutable-releases.json"
+          python3 scripts/verify_github_environment_v2.py --repository-json "$AUTHORITY_V2_RUNTIME/repository.json" --environment-json "$AUTHORITY_V2_RUNTIME/environment.json" --branch-policies-json "$AUTHORITY_V2_RUNTIME/branch-policies.json" --branch-policies-status "$BRANCH_POLICIES_STATUS" --immutable-releases-json "$AUTHORITY_V2_RUNTIME/immutable-releases.json" --environment-status "$ENVIRONMENT_STATUS" --environment-secrets-json "$AUTHORITY_V2_RUNTIME/environment-secrets.json" --environment-authenticated true --contract github-environment-v2-contract.json
+          python3 scripts/verify_authority_v2.py
+          sha256sum -c AUTHORITY-V2-SHA256SUMS
+
+      - name: Generate sign and verify exact authenticated issuance without publication
+        env:
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_API_INSTANCE_ID: ${{ secrets.CLERK_API_INSTANCE_ID }}
+          GH_TOKEN: ${{ github.token }}
+          GH_GUARD_APP_TOKEN: ${{ steps.guard-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          COSIGN_PATH="$(command -v cosign)"
+          python3 scripts/verify_authority_v2.py --verify-cosign-binary "$COSIGN_PATH"
+          mkdir "$AUTHORITY_V2_RUNTIME/dist"
+          python3 scripts/build_authority_v2.py --output-dir "$AUTHORITY_V2_RUNTIME/dist" --github-issuance "$AUTHORITY_V2_RUNTIME/github-issuance.json" --github-issuance-sha256 "$GITHUB_ISSUANCE_SHA256" --candidate-head "$CANDIDATE_HEAD" --candidate-tree "$CANDIDATE_TREE" --canonical-diff-sha256 "$CANDIDATE_DIFF" --review-receipt-sha256 "$REVIEW_HASH"
+          python3 scripts/verify_authority_v2.py --sign-subject-dir "$AUTHORITY_V2_RUNTIME/dist" --reviewed-activation-sha "$CANDIDATE_HEAD" --preissuance-review-receipt "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.json" --preissuance-review-receipt-sha256 "$REVIEW_HASH" --preissuance-review-receipt-bundle "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.sigstore.json" --preissuance-review-envelope "$AUTHORITY_V2_RUNTIME/kanban-review-envelope.json" --github-issuance "$AUTHORITY_V2_RUNTIME/github-issuance.json" --github-issuance-sha256 "$GITHUB_ISSUANCE_SHA256" --cosign "$COSIGN_PATH"
+          # Publication is unavailable by construction, so the run confirms the
+          # expected F12-blocked state with a verify-only, write-free check
+          # instead of attempting a publication that can never be authorized.
+          # Only once every non-mutating gate above has succeeded is the
+          # terminal state of this run truthfully `completed`.
+          DERIVED_CLOSURE_SHA256="$(jq -er .derived_closure_sha256 "$AUTHORITY_V2_RUNTIME/derived-activation-closure.json")"
+          [[ "$DERIVED_CLOSURE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          # Nothing in this round claims a completed terminal state until the
+          # write-free F12 gate has confirmed the complete canonical release
+          # inventory. The round therefore first stages a NON-terminal
+          # `verification_pending` runner state, so the inventory the gate
+          # verifies carries no completed terminal artifact at all.
+          python3 scripts/build_authority_v2.py --emit-runner-state \
+            --recovery-round "$ACC_RECOVERY_ROUND" \
+            --terminal-state verification_pending \
+            --derived-closure-sha256 "$DERIVED_CLOSURE_SHA256" \
+            > "$AUTHORITY_V2_RUNTIME/staged-runner-state.json"
+          jq -er .runner_state "$AUTHORITY_V2_RUNTIME/staged-runner-state.json" \
+            > "$AUTHORITY_V2_RUNTIME/dist/authority-v2-runner-state.json"
+          cd "$AUTHORITY_V2_RUNTIME/dist"
+          sha256sum authority-v2-future.json authority-v2-future.sigstore.json authority-v2-in_window.json authority-v2-in_window.sigstore.json authority-v2-runner-state.json authority-v2-stale.json authority-v2-stale.sigstore.json > AUTHORITY-V2-RELEASE-SHA256SUMS
+          cd "$GITHUB_WORKSPACE"
+          # The six release assets that are not signed release evidence are
+          # staged into the same inventory now, before anything is gated. The
+          # gate hashes these exact staged bytes and the seal makes these exact
+          # staged bytes immutable, so no asset can be verified by the gate and
+          # then left mutable - which is exactly what happened while the map
+          # covered only the eight release-evidence members. The release
+          # checksum manifest above still enumerates the seven signed evidence
+          # artifacts alone, because that is the byte stream the unchanged
+          # production release verifier recomputes.
+          install -m 0600 authority-v2-policy.json "$AUTHORITY_V2_RUNTIME/dist/authority-v2-policy.json"
+          install -m 0600 schemas/authority-v2-subject.schema.json "$AUTHORITY_V2_RUNTIME/dist/authority-v2-subject.schema.json"
+          install -m 0600 github-environment-v2-contract.json "$AUTHORITY_V2_RUNTIME/dist/github-environment-v2-contract.json"
+          install -m 0600 protected-asset-receipt-v2.json "$AUTHORITY_V2_RUNTIME/dist/protected-asset-receipt-v2.json"
+          install -m 0600 "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.json" "$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.json"
+          install -m 0600 "$AUTHORITY_V2_RUNTIME/preissuance-review-receipt.sigstore.json" "$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.sigstore.json"
+          # The one canonical complete inventory and digest map of every
+          # release asset, composed once here, before the gate. The gate
+          # consumes exactly this map instead of deriving an inventory of its
+          # own, and the manifest and the seal consume the very same map.
+          python3 scripts/build_authority_v2.py \
+            --emit-canonical-inventory "$AUTHORITY_V2_RUNTIME/dist" \
+            --canonical-inventory "$AUTHORITY_V2_RUNTIME/canonical-inventory-staged.json" \
+            > "$AUTHORITY_V2_RUNTIME/canonical-inventory-staged-emit.json"
+          test -s "$AUTHORITY_V2_RUNTIME/canonical-inventory-staged.json"
+          # The F12 gate runs before anything becomes immutable. Verify-only
+          # runs every reachable publication leg for real over the complete
+          # canonical release inventory and reports either a verified or a
+          # truthfully blocked result. Both are non-authorizing, and the run
+          # may not seal that inventory until this has confirmed it: F12 stays
+          # open, release authorization stays false and no write is attempted.
+          python3 scripts/verify_publication_v2.py --verify-only --reviewed-activation-sha "$CANDIDATE_HEAD" --preissuance-review-receipt-sha256 "$REVIEW_HASH" --github-issuance "$AUTHORITY_V2_RUNTIME/github-issuance.json" --github-issuance-sha256 "$GITHUB_ISSUANCE_SHA256" --cosign "$COSIGN_PATH" --asset AUTHORITY-V2-RELEASE-SHA256SUMS="$AUTHORITY_V2_RUNTIME/dist/AUTHORITY-V2-RELEASE-SHA256SUMS" --asset authority-v2-future.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-future.json" --asset authority-v2-future.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-future.sigstore.json" --asset authority-v2-in_window.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-in_window.json" --asset authority-v2-in_window.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-in_window.sigstore.json" --asset authority-v2-policy.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-policy.json" --asset authority-v2-runner-state.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-runner-state.json" --asset authority-v2-stale.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-stale.json" --asset authority-v2-stale.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-stale.sigstore.json" --asset authority-v2-subject.schema.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-subject.schema.json" --asset github-environment-v2-contract.json="$AUTHORITY_V2_RUNTIME/dist/github-environment-v2-contract.json" --asset preissuance-review-receipt.json="$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.json" --asset preissuance-review-receipt.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.sigstore.json" --asset protected-asset-receipt-v2.json="$AUTHORITY_V2_RUNTIME/dist/protected-asset-receipt-v2.json" \
+            --canonical-inventory "$AUTHORITY_V2_RUNTIME/canonical-inventory-staged.json" \
+            > "$AUTHORITY_V2_RUNTIME/verify-only-publication.json"
+          [[ "$(jq -er .f12_closed "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "false" ]]
+          [[ "$(jq -er .release_authorized "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "false" ]]
+          [[ "$(jq -er .verify_only "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "true" ]]
+          [[ "$(jq -er .writes_performed "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "0" ]]
+          [[ "$(jq -er .transports_constructed "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "0" ]]
+          [[ "$(jq -er .publication "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "unavailable" ]]
+          # The gate must really have verified, with no blocker at all. A
+          # truthfully blocked result stops this run here rather than letting
+          # it claim a completed round.
+          [[ "$(jq -er .state "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "verified" ]]
+          [[ "$(jq -er .deep_plan_verified "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "true" ]]
+          [[ "$(jq -er '.blocked_by == null' "$AUTHORITY_V2_RUNTIME/verify-only-publication.json")" == "true" ]]
+          # Only now, with the pre-terminal gate confirmed, may this round
+          # claim a completed terminal state. The CLI itself requires that
+          # gate and refuses one taken over the completed artifact.
+          python3 scripts/build_authority_v2.py --emit-runner-state \
+            --recovery-round "$ACC_RECOVERY_ROUND" --terminal-state completed \
+            --derived-closure-sha256 "$DERIVED_CLOSURE_SHA256" \
+            --verify-only-result "$AUTHORITY_V2_RUNTIME/verify-only-publication.json" \
+            > "$AUTHORITY_V2_RUNTIME/runner-state.json"
+          jq -er .runner_state "$AUTHORITY_V2_RUNTIME/runner-state.json" \
+            > "$AUTHORITY_V2_RUNTIME/dist/authority-v2-runner-state.json"
+          cd "$AUTHORITY_V2_RUNTIME/dist"
+          sha256sum authority-v2-future.json authority-v2-future.sigstore.json authority-v2-in_window.json authority-v2-in_window.sigstore.json authority-v2-runner-state.json authority-v2-stale.json authority-v2-stale.sigstore.json > AUTHORITY-V2-RELEASE-SHA256SUMS
+          cd "$GITHUB_WORKSPACE"
+          # The final evidence manifest is composed HERE - before the last
+          # non-mutating verify-only gate - out of exactly the bytes that gate
+          # is about to confirm, and it is written outside the inventory it
+          # describes. Nothing is therefore created or rewritten inside the
+          # evidence set after the gate: sealing only changes modes.
+          python3 scripts/build_authority_v2.py \
+            --emit-final-evidence-manifest "$AUTHORITY_V2_RUNTIME/dist" \
+            --final-evidence-manifest "$AUTHORITY_V2_RUNTIME/AUTHORITY-V2-FINAL-EVIDENCE.json" \
+            --final-evidence-member AUTHORITY-V2-RELEASE-SHA256SUMS \
+            --final-evidence-member authority-v2-future.json \
+            --final-evidence-member authority-v2-future.sigstore.json \
+            --final-evidence-member authority-v2-in_window.json \
+            --final-evidence-member authority-v2-in_window.sigstore.json \
+            --final-evidence-member authority-v2-policy.json \
+            --final-evidence-member authority-v2-runner-state.json \
+            --final-evidence-member authority-v2-stale.json \
+            --final-evidence-member authority-v2-stale.sigstore.json \
+            --final-evidence-member authority-v2-subject.schema.json \
+            --final-evidence-member github-environment-v2-contract.json \
+            --final-evidence-member preissuance-review-receipt.json \
+            --final-evidence-member preissuance-review-receipt.sigstore.json \
+            --final-evidence-member protected-asset-receipt-v2.json \
+            > "$AUTHORITY_V2_RUNTIME/final-evidence-manifest.json"
+          test -s "$AUTHORITY_V2_RUNTIME/AUTHORITY-V2-FINAL-EVIDENCE.json"
+          # The same unchanged verify-only path runs once more over the exact
+          # final inventory, and it is that result the seal binds byte for
+          # byte. Nothing may drift between this confirmation and the seal.
+          python3 scripts/verify_publication_v2.py --verify-only --reviewed-activation-sha "$CANDIDATE_HEAD" --preissuance-review-receipt-sha256 "$REVIEW_HASH" --github-issuance "$AUTHORITY_V2_RUNTIME/github-issuance.json" --github-issuance-sha256 "$GITHUB_ISSUANCE_SHA256" --cosign "$COSIGN_PATH" --asset AUTHORITY-V2-RELEASE-SHA256SUMS="$AUTHORITY_V2_RUNTIME/dist/AUTHORITY-V2-RELEASE-SHA256SUMS" --asset authority-v2-future.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-future.json" --asset authority-v2-future.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-future.sigstore.json" --asset authority-v2-in_window.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-in_window.json" --asset authority-v2-in_window.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-in_window.sigstore.json" --asset authority-v2-policy.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-policy.json" --asset authority-v2-runner-state.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-runner-state.json" --asset authority-v2-stale.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-stale.json" --asset authority-v2-stale.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-stale.sigstore.json" --asset authority-v2-subject.schema.json="$AUTHORITY_V2_RUNTIME/dist/authority-v2-subject.schema.json" --asset github-environment-v2-contract.json="$AUTHORITY_V2_RUNTIME/dist/github-environment-v2-contract.json" --asset preissuance-review-receipt.json="$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.json" --asset preissuance-review-receipt.sigstore.json="$AUTHORITY_V2_RUNTIME/dist/preissuance-review-receipt.sigstore.json" --asset protected-asset-receipt-v2.json="$AUTHORITY_V2_RUNTIME/dist/protected-asset-receipt-v2.json" \
+            --canonical-inventory "$AUTHORITY_V2_RUNTIME/AUTHORITY-V2-FINAL-EVIDENCE.json" \
+            > "$AUTHORITY_V2_RUNTIME/verify-only-final.json"
+          [[ "$(jq -er .state "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "verified" ]]
+          [[ "$(jq -er .deep_plan_verified "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "true" ]]
+          [[ "$(jq -er '.blocked_by == null' "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "true" ]]
+          [[ "$(jq -er .f12_closed "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "false" ]]
+          [[ "$(jq -er .release_authorized "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "false" ]]
+          [[ "$(jq -er .writes_performed "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "0" ]]
+          [[ "$(jq -er .transports_constructed "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" == "0" ]]
+          # The last non-mutating gate consumed exactly the one map the final
+          # evidence manifest composed, and the seal below consumes the same
+          # one - three consumers, one map, compared in both directions.
+          [[ "$(jq -er .canonical_inventory_sha256 "$AUTHORITY_V2_RUNTIME/verify-only-final.json")" \
+             == "$(jq -er .canonical_inventory_sha256 "$AUTHORITY_V2_RUNTIME/AUTHORITY-V2-FINAL-EVIDENCE.json")" ]]
+          # The very inventory just verified is the one sealed below, byte for
+          # byte: the manifest is recomputed and must be unchanged.
+          cd "$AUTHORITY_V2_RUNTIME/dist"
+          sha256sum -c AUTHORITY-V2-RELEASE-SHA256SUMS
+          cd "$GITHUB_WORKSPACE"
+          # Only now, with every subject, every Sigstore bundle and the release
+          # checksum manifest finalized, is the complete final evidence set
+          # sealed. Nothing mutable is ever appended afterwards.
+          python3 scripts/build_authority_v2.py --seal-final-evidence "$AUTHORITY_V2_RUNTIME/dist" \
+            --verify-only-result "$AUTHORITY_V2_RUNTIME/verify-only-final.json" \
+            --final-evidence-manifest "$AUTHORITY_V2_RUNTIME/AUTHORITY-V2-FINAL-EVIDENCE.json" \
+            --final-evidence-member AUTHORITY-V2-RELEASE-SHA256SUMS \
+            --final-evidence-member authority-v2-future.json \
+            --final-evidence-member authority-v2-future.sigstore.json \
+            --final-evidence-member authority-v2-in_window.json \
+            --final-evidence-member authority-v2-in_window.sigstore.json \
+            --final-evidence-member authority-v2-policy.json \
+            --final-evidence-member authority-v2-runner-state.json \
+            --final-evidence-member authority-v2-stale.json \
+            --final-evidence-member authority-v2-stale.sigstore.json \
+            --final-evidence-member authority-v2-subject.schema.json \
+            --final-evidence-member github-environment-v2-contract.json \
+            --final-evidence-member preissuance-review-receipt.json \
+            --final-evidence-member preissuance-review-receipt.sigstore.json \
+            --final-evidence-member protected-asset-receipt-v2.json \
+            > "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json"
+          [[ "$(jq -er .final_evidence.sealing.directory_mode_readback "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "0555" ]]
+          [[ "$(jq -er '[.final_evidence.sealing.entries[].mode_readback] | unique | join(",")' "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "0444" ]]
+          [[ "$(jq -er .final_evidence.sealing.hashes_recomputed_after_sealing "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "true" ]]
+          [[ "$(jq -er .final_evidence.runner_terminal_state "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "completed" ]]
+          [[ "$(jq -er .final_evidence.derived_closure_sha256 "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "$DERIVED_CLOSURE_SHA256" ]]
+          FINAL_EVIDENCE_SHA256="$(jq -er .final_evidence.manifest_sha256 "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")"
+          [[ "$FINAL_EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          # The manifest composed before the gate is byte for byte the one the
+          # seal accepted, and the sealed set never carries it as a member.
+          [[ "$FINAL_EVIDENCE_SHA256" == "$(jq -er .final_evidence_manifest_sha256 "$AUTHORITY_V2_RUNTIME/final-evidence-manifest.json")" ]]
+          [[ "$(jq -er '[.final_evidence.sealing.entries[].name] | index("AUTHORITY-V2-FINAL-EVIDENCE.json") == null' "$AUTHORITY_V2_RUNTIME/final-evidence-sealing.json")" == "true" ]]
+
+      - name: Record the actual terminal state of this run
+        if: failure()
+        run: |
+          set -euo pipefail
+          umask 077
+          # A failure path states the terminal state it really reached; it may
+          # never claim `completed` in advance.
+          python3 scripts/build_authority_v2.py --emit-runner-state \
+            --recovery-round "$ACC_RECOVERY_ROUND" \
+            --terminal-state blocked_builder_failed \
+            > "$RUNNER_TEMP/authority-v2-terminal-state.json" || true
+          jq -er .runner_state.terminal_state \
+            "$RUNNER_TEMP/authority-v2-terminal-state.json" || true
+
+      - name: Delete ephemeral protected runtime bytes
+        if: always()
+        run: |
+          set -euo pipefail
+          # The final evidence was deliberately sealed 0555/0444, so the tree
+          # is reopened under this job's own ownership before removal. Without
+          # this the cleanup could not remove what sealing made immutable, and
+          # the run would end on a failed cleanup instead of a clean terminal
+          # state. Nothing outside the ephemeral runtime is touched.
+          if [ -d "$AUTHORITY_V2_RUNTIME" ]; then
+            find "$AUTHORITY_V2_RUNTIME" -type d -exec chmod u+rwx {} +
+            find "$AUTHORITY_V2_RUNTIME" -type f -exec chmod u+rw {} +
+            rm -rf "$AUTHORITY_V2_RUNTIME"
+          fi
+          test ! -e "$AUTHORITY_V2_RUNTIME"

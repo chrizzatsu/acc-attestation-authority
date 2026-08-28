@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "contract": "acc-authority-v2-publication-guard-transport",
+  "transport_role": "administration-read-guards-only",
+  "github_app_slug": "acc-authority-publication-guard",
+  "repository_selection": [
+    "chrizzatsu/acc-attestation-authority"
+  ],
+  "token_permissions": {
+    "administration": "read"
+  },
+  "allowed_requests": [
+    "GET /repos/chrizzatsu/acc-attestation-authority/immutable-releases",
+    "GET /repos/chrizzatsu/acc-attestation-authority/rulesets?includes_parents=false&targets=tag&per_page=100&page=1",
+    "GET /repos/chrizzatsu/acc-attestation-authority/rulesets/{ruleset_id}?includes_parents=false"
+  ],
+  "forbidden_roles": [
+    "contents-read",
+    "contents-write",
+    "administration-write"
+  ],
+  "environment_gate": "attestation",
+  "zero_spend_required": true,
+  "activation_precondition": {
+    "state": "unavailable",
+    "reason": "No pre-existing reviewed zero-spend GitHub App installation is bound by this candidate.",
+    "remediation": "A later exact candidate may set state to ready only after independent review binds the installed App slug, repository selection and exact administration-read-only token request.",
+    "no_fallback": true
+  },
+  "mutation_transport": {
+    "credential": "ephemeral job GITHUB_TOKEN",
+    "permission": "contents-write",
+    "guard_reads_forbidden": true
+  }
+}

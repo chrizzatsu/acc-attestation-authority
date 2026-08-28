@@ -1,0 +1,180 @@
+name: Read back closed Authority-v2 activation
+
+on:
+  workflow_run:
+    workflows: [Sign exact protected Kanban Authority-v2 review]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: authority-v2-terminal-readback-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  # A later workflow_run can authenticate the completed activation job, its
+  # server-persisted artifact and the workflow's final disabled state together.
+  terminal-readback:
+    name: terminal-readback
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_run' && github.event.workflow_run.status == 'completed' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.run_attempt == 1 && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.path == '.github/workflows/review-authority-v2.yml' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    container:
+      image: docker.io/library/python:3.13.7-slim@sha256:2be5d3cb08aa616c6e38d922bd7072975166b2de772004f79ee1bae59fe983dc
+      options: --read-only --cap-drop=ALL --security-opt=no-new-privileges --tmpfs /tmp:rw,exec,nosuid,nodev,size=384m
+    env:
+      PATH: /authority-v2-no-ambient-tools
+    defaults:
+      run:
+        shell: /usr/local/bin/python3 -I -B {0}
+    steps:
+      - name: Run the exact-hash authenticated Python stdlib collector
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ACTIVATION_RUN_ID: ${{ github.event.workflow_run.id }}
+          ACTIVATION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          ACTIVATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          import hashlib
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          API = "https://api.github.com"
+          REPOSITORY = "chrizzatsu/acc-authority-independent-review"
+          VALIDATOR = "scripts/verify_kanban_review_v2.py"
+          CONTRACT = "bootstrap-contract.json"
+          COLLECTOR = ".github/workflows/readback-authority-v2-activation.yml"
+          PYTHON = "/usr/local/bin/python3"
+          PUBLIC_RUNTIME = (
+              "docker.io/library/python:3.13.7-slim@sha256:"
+              "2be5d3cb08aa616c6e38d922bd7072975166b2de772004f79ee1bae59fe983dc"
+          )
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def closed_json(data, label):
+              def no_duplicates(pairs):
+                  result = {}
+                  for key, value in pairs:
+                      require(key not in result, f"{label} duplicate member")
+                      result[key] = value
+                  return result
+              try:
+                  return json.loads(data, object_pairs_hook=no_duplicates)
+              except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                  raise SystemExit(f"{label} is not valid UTF-8 JSON") from error
+
+          def fetch(path, commit, token):
+              request = urllib.request.Request(
+                  f"{API}/repos/{REPOSITORY}/contents/{path}?ref={commit}",
+                  headers={
+                      "Accept": "application/vnd.github.raw",
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "acc-authority-v2-terminal-bootstrap",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+                  method="GET",
+              )
+              try:
+                  opener = urllib.request.build_opener(RefuseRedirects())
+                  with opener.open(request, timeout=60) as response:
+                      require(response.status == 200, "bootstrap read returned non-200")
+                      data = response.read(8 * 1024 * 1024 + 1)
+              except (urllib.error.URLError, TimeoutError) as error:
+                  raise SystemExit("authenticated bootstrap read failed") from error
+              require(0 < len(data) <= 8 * 1024 * 1024,
+                      "authenticated bootstrap byte size is invalid")
+              return data
+
+          def write_exact(root, relative, data):
+              target = root / relative
+              target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+              with target.open("xb") as output:
+                  output.write(data)
+              target.chmod(0o400)
+
+          commit = os.environ.get("GITHUB_SHA", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+          activation_head = os.environ.get("ACTIVATION_HEAD_SHA", "")
+          require(re.fullmatch(r"[0-9a-f]{40}", commit) is not None,
+                  "authenticated collector commit is absent")
+          require(re.fullmatch(r"[0-9a-f]{40}", activation_head) is not None
+                  and commit == activation_head,
+                  "collector head does not match activation head")
+          require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_run"
+                  and os.environ.get("GITHUB_RUN_ATTEMPT") == "1"
+                  and os.environ.get("ACTIVATION_RUN_ATTEMPT") == "1",
+                  "collector trigger or run attempt mismatch")
+          require(os.environ.get("GITHUB_REPOSITORY") == REPOSITORY
+                  and os.environ.get("GITHUB_REF") == "refs/heads/main"
+                  and os.environ.get("GITHUB_WORKFLOW_REF")
+                  == f"{REPOSITORY}/{COLLECTOR}@refs/heads/main",
+                  "authenticated collector workflow identity mismatch")
+          ambient_path = os.environ.get("PATH", "")
+          require(ambient_path and all(
+                      entry and Path(entry).is_absolute()
+                      for entry in ambient_path.split(os.pathsep)
+                  ), "terminal bootstrap PATH is malformed")
+          contract_bytes = fetch(CONTRACT, commit, token)
+          validator_bytes = fetch(VALIDATOR, commit, token)
+          collector_bytes = fetch(COLLECTOR, commit, token)
+          contract = closed_json(contract_bytes, "terminal bootstrap contract")
+          validator_digest = hashlib.sha256(validator_bytes).hexdigest()
+          collector_digest = hashlib.sha256(collector_bytes).hexdigest()
+          require(contract.get("contract")
+                  == "acc-authority-v2-independent-review-bootstrap",
+                  "terminal bootstrap contract identity mismatch")
+          require(contract.get("validator")
+                  == {"path": VALIDATOR, "sha256": validator_digest}
+                  and contract["authorized_source_run"][
+                      "independent_validator_sha256"] == validator_digest,
+                  "terminal collector bytes do not match their contract hashes")
+          terminal = contract.get("terminal_readback", {})
+          require(terminal.get("collector_workflow_path") == COLLECTOR
+                  and terminal.get("collector_workflow_sha256") == collector_digest,
+                  "terminal workflow bytes do not match their contract hash")
+          require(terminal.get("collector_verifier", {}).get("runtime", {}).get(
+                      "image") == PUBLIC_RUNTIME,
+                  "terminal runtime is not the reviewed public immutable image")
+          runtime_root = Path("/tmp/authority-v2-terminal-verifier")
+          require(not runtime_root.exists(), "terminal verifier root already exists")
+          runtime_root.mkdir(mode=0o700)
+          write_exact(runtime_root, CONTRACT, contract_bytes)
+          write_exact(runtime_root, VALIDATOR, validator_bytes)
+          write_exact(runtime_root, COLLECTOR, collector_bytes)
+          workspace = Path(os.environ.get("GITHUB_WORKSPACE", ""))
+          require(workspace.is_absolute() and workspace.is_dir(),
+                  "terminal workspace is absent")
+          os.chdir(workspace)
+          os.execve(
+              PYTHON,
+              [PYTHON, "-I", "-B", str(runtime_root / VALIDATOR),
+               "--phase", "terminal-readback-collector"],
+              dict(os.environ),
+          )
+
+      - name: Upload separately named closed terminal readback
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-v2-closed-terminal-readback-t_c298fca4
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            terminal/output/terminal-activation-readback.json
+            terminal/output/terminal-activation-readback.sigstore.json
