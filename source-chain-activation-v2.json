@@ -1,0 +1,538 @@
+{
+  "activation_authorized": false,
+  "activation_state": "unavailable",
+  "authorized_dispatch": {
+    "caller_selectable": false,
+    "no_fallback": true,
+    "ref": "refs/heads/main",
+    "repository": "chrizzatsu/acc-authority-protected-source",
+    "run_attempt": 1,
+    "run_id": null,
+    "selector": "immutable-contract-pinned",
+    "trigger": "workflow_dispatch",
+    "workflow_path": ".github/workflows/export-kanban-review-v2.yml"
+  },
+  "authorizes": {
+    "acc_releaser_activation": true,
+    "authority_merge": false,
+    "authority_v2_issuance": false,
+    "customer_data_access": false,
+    "database_access": false,
+    "external_send": false,
+    "product_access": false,
+    "publication": false,
+    "release": false,
+    "repository_creation": true,
+    "signing": false,
+    "spend": false,
+    "workflow_dispatch": true,
+    "workflow_enable_before_authenticated_readback": false,
+    "workflow_write": true
+  },
+  "cleanup": {
+    "artifact_retention_days": 1,
+    "authenticated_disable_readback_required": true,
+    "delete_runtime_bytes": true,
+    "delete_temporary_checkouts": true,
+    "disable_covers_failure_paths": true,
+    "expected_workflow_state_after_activation": "disabled_manually",
+    "no_persisted_raw_values": true,
+    "workflow_disabled_after_activation": true
+  },
+  "contract": "acc-authority-v2-source-chain-activation",
+  "external_activation_review": {
+    "artifact_files": [
+      "external-activation-review-receipt.json",
+      "external-activation-review-receipt.sigstore.json"
+    ],
+    "artifact_name": "authority-v2-external-activation-review-t_c298fca4",
+    "candidate_authored_decision_forbidden": true,
+    "candidate_owned_approval_forbidden": true,
+    "circular_receipt_precomputation_forbidden": true,
+    "decision_source": "independent-reviewer-authored-artifact",
+    "produced_after_exact_candidate_required": true,
+    "receipt_sha256": null,
+    "receipt_type": "acc-authority-v2-external-independent-activation-review",
+    "repository": "chrizzatsu/acc-authority-independent-review",
+    "required_bindings": [
+      "base_commit",
+      "base_tree",
+      "candidate_diff_sha256",
+      "canonical_diff_sha256",
+      "changed_path_manifest",
+      "critical_artifact_sha256",
+      "head_commit",
+      "head_tree",
+      "repository",
+      "reviewer_authorization_path",
+      "reviewer_authorization_sha256",
+      "sole_parent",
+      "tracked_paths_sha256"
+    ],
+    "required_decision": "APPROVED",
+    "required_findings_count": 0,
+    "required_reviewer_profile": "acc-reviewer",
+    "self_review_forbidden": true,
+    "sigstore_bundle_required": true,
+    "state": "unavailable",
+    "verified_against_exact_checkout": true,
+    "workflow_path": ".github/workflows/review-authority-v2.yml"
+  },
+  "f8_closed": false,
+  "finding": "F8-AUTHENTICATED-SOURCE-CHAIN-UNAVAILABLE",
+  "generated_activation_evidence": {
+    "artifact_files": [
+      "activation-record.json",
+      "activation-subject.json",
+      "canonical-binary-full-index.diff",
+      "external-review/external-activation-review-receipt.json",
+      "external-review/external-activation-review-receipt.sigstore.json",
+      "generated-activation-evidence.sigstore.json",
+      "name-status-find-renames-50.z",
+      "raw-full-index-find-renames-50.z",
+      "raw-provenance.json",
+      "raw-status-authoritative.z",
+      "raw/activation-jobs.json",
+      "raw/activation-run.json",
+      "raw/activation-runs.json",
+      "raw/decision-commit.json",
+      "raw/external-review-artifact.zip",
+      "raw/review-artifacts.json",
+      "raw/review-jobs.json",
+      "raw/review-run.json",
+      "raw/signed-review-artifact.zip",
+      "raw/workflow-run-event.json",
+      "raw/workflow-state-after.json",
+      "raw/workflow-state-before.json",
+      "raw/workflow-state-cleanup.json",
+      "signed-review/kanban-review-envelope.json",
+      "signed-review/preissuance-review-receipt.json",
+      "signed-review/preissuance-review-receipt.sigstore.json"
+    ],
+    "authorized_lane": "acc-releaser",
+    "builder_output_is_never_approval": true,
+    "candidate_identity_binding_required": true,
+    "evidence_state": "unavailable",
+    "fabrication_prohibited": true,
+    "generator": "cosign v3.1.3",
+    "generator_binary_digest_required": true,
+    "generator_version": "v3.1.3",
+    "independent_zero_finding_activation_review_required": true,
+    "maximum_authorized_activation_attempts": 1,
+    "post_activation_independent_review_required": true,
+    "rejected_evidence": [
+      "absent-evidence",
+      "cosign-v3.1.3-ecdsa-hashedrekord-rekor-v1",
+      "relabelled-provenance",
+      "sigstore-java-conformance-vector",
+      "static-or-compatible-provenance",
+      "wrong-generator-version",
+      "wrong-rekor-generation",
+      "wrong-rekor-log-key-algorithm",
+      "wrong-rfc3161-evidence",
+      "wrong-signer-signature-algorithm"
+    ],
+    "rekor_generation": "rekor-v2",
+    "rekor_log_key_algorithm": "PKIX_ED25519",
+    "relabelling_prohibited": true,
+    "reversible": true,
+    "route": "cosign-v3.1.3-ed25519-rekor-v2-rfc3161",
+    "self_authorization_forbidden": true,
+    "signer_signature_algorithm": "ecdsa-p256-sha256",
+    "substitution_prohibited": true,
+    "timestamp": "rfc3161",
+    "zero_spend_required": true
+  },
+  "independent_activation_authorization_required": true,
+  "independently_reviewable_before_repository_creation": true,
+  "independently_reviewable_before_workflow_write": true,
+  "no_fallback": true,
+  "post_activation_proof": {
+    "f8_true_requires_live_evidence": true,
+    "live_evidence_pinned": false,
+    "pinning_candidate_topology": "fresh-ordinary-non-merge-direct-child",
+    "pinning_helper": "scripts/pin_source_chain_activation_v2.py",
+    "required_live_fields": [
+      "artifact_content_sha256",
+      "certificate_github_workflow_sha",
+      "envelope_sha256",
+      "independent_bootstrap_commit",
+      "independent_bootstrap_tree",
+      "repository_id",
+      "review_receipt_sha256",
+      "run_attempt",
+      "run_head_sha",
+      "run_head_tree",
+      "run_id",
+      "source_bootstrap_commit",
+      "source_bootstrap_tree"
+    ]
+  },
+  "pre_activation_authorization": {
+    "additional_run_ids_excluded_before_protected_actions": true,
+    "authenticated_readback_required_before_enable": true,
+    "authorized_decision_delivery": {
+      "authenticated_readback_required": true,
+      "branch": "main",
+      "branch_protection_required": true,
+      "candidate_authored_decision_forbidden": true,
+      "derived_path_only": true,
+      "path_template": "decisions/{authority_head_commit}.json",
+      "produced_after_exact_candidate_required": true,
+      "repository": "chrizzatsu/acc-authority-independent-review",
+      "writer_login": "chrizzatsu"
+    },
+    "authorized_lane": "acc-releaser",
+    "authorized_run_attempt": 1,
+    "caller_selectable": false,
+    "cleanup_required": true,
+    "deterministic_later_fresh_direct_child_pinning_required": true,
+    "exact_file_writes": [
+      {
+        "path": "independent-review-bootstrap-v2/.github/workflows/readback-authority-v2-activation.yml",
+        "repository": "chrizzatsu/acc-authority-independent-review",
+        "sha256": "d0f2def206d2084108b863d47f89db66b3842dd6de93bf2d8477660d19661924",
+        "target_path": ".github/workflows/readback-authority-v2-activation.yml"
+      },
+      {
+        "path": "independent-review-bootstrap-v2/.github/workflows/review-authority-v2.yml",
+        "repository": "chrizzatsu/acc-authority-independent-review",
+        "sha256": "b63b15a8e8102b1032f626fffa4d62a187165166de11989d13215f2893ec331c",
+        "target_path": ".github/workflows/review-authority-v2.yml"
+      },
+      {
+        "path": "independent-review-bootstrap-v2/bootstrap-contract.json",
+        "repository": "chrizzatsu/acc-authority-independent-review",
+        "sha256": "037b8406ea6f426fe7b1267c7b59763dfb60be188c5f81204c93a83fff1bd3a3",
+        "target_path": "bootstrap-contract.json"
+      },
+      {
+        "path": "independent-review-bootstrap-v2/scripts/verify_kanban_review_v2.py",
+        "repository": "chrizzatsu/acc-authority-independent-review",
+        "sha256": "32052fbddfe07fcf837a1ec496e5391ae1464627a3792fd070150d1d982ba643",
+        "target_path": "scripts/verify_kanban_review_v2.py"
+      },
+      {
+        "path": "protected-source-bootstrap-v2/.github/workflows/export-kanban-review-v2.yml",
+        "repository": "chrizzatsu/acc-authority-protected-source",
+        "sha256": "a56b0c601647960ca06f49c0af73b321c83aae16768d24693d54af39b336dc20",
+        "target_path": ".github/workflows/export-kanban-review-v2.yml"
+      },
+      {
+        "path": "protected-source-bootstrap-v2/bootstrap-contract.json",
+        "repository": "chrizzatsu/acc-authority-protected-source",
+        "sha256": "f10259daf66fd26e83b65c2ae8489800ac9976dc0ee8baf1dcca8b44cb4b5c6b",
+        "target_path": "bootstrap-contract.json"
+      },
+      {
+        "path": "protected-source-bootstrap-v2/scripts/export_kanban_review_v2.py",
+        "repository": "chrizzatsu/acc-authority-protected-source",
+        "sha256": "7206b39ca7098b9117d65a8e4569bd91137dddd1bed11b26c4ac26c46ac13959",
+        "target_path": "scripts/export_kanban_review_v2.py"
+      }
+    ],
+    "exact_repository_creation": [
+      "chrizzatsu/acc-authority-independent-review",
+      "chrizzatsu/acc-authority-protected-source"
+    ],
+    "immutable": true,
+    "lane_self_authorization_forbidden": true,
+    "maximum_authorized_activation_attempts": 1,
+    "maximum_incremental_spend_eur": "0.00",
+    "reversible": true,
+    "workflow_disabled_before_protected_actions": true,
+    "workflows_disabled_until_authenticated_readback": true,
+    "zero_spend_required": true
+  },
+  "producer_bindings": {
+    "artifact_content_digest_algorithm": "sha256(acc-authority-v2-protected-source-artifact\\0 || sorted(len(name)||name||len(bytes)||bytes))",
+    "artifact_content_sha256": null,
+    "artifact_files": [
+      "kanban-review-envelope.json",
+      "preissuance-review-receipt.json"
+    ],
+    "artifact_name": "authority-v2-review-t_c298fca4",
+    "certificate_github_workflow_sha": null,
+    "envelope_sha256": null,
+    "immutable_actions_artifact_required": true,
+    "review_receipt_sha256": null,
+    "signed_artifact_files": [
+      "kanban-review-envelope.json",
+      "preissuance-review-receipt.json",
+      "preissuance-review-receipt.sigstore.json"
+    ],
+    "signed_artifact_name": "authority-v2-signed-review-t_c298fca4",
+    "sigstore_bundle_required": true,
+    "sigstore_bundle_sha256": null,
+    "sigstore_identity": "https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/review-authority-v2.yml@refs/heads/main",
+    "sigstore_issuer": "https://token.actions.githubusercontent.com"
+  },
+  "readback": {
+    "fields": [
+      "artifact_content_sha256",
+      "certificate_github_workflow_sha",
+      "envelope_sha256",
+      "independent_bootstrap_commit",
+      "independent_bootstrap_tree",
+      "repository_id",
+      "review_receipt_sha256",
+      "run_attempt",
+      "run_head_sha",
+      "run_head_tree",
+      "run_id",
+      "source_bootstrap_commit",
+      "source_bootstrap_tree"
+    ],
+    "required": true
+  },
+  "repositories_created": false,
+  "reviewed_source": {
+    "authority_head_commit": null,
+    "authority_head_tree": null,
+    "authority_repository": "chrizzatsu/acc-attestation-authority",
+    "independent_bootstrap_commit": null,
+    "independent_bootstrap_tree": null,
+    "source_bootstrap_commit": null,
+    "source_bootstrap_tree": null,
+    "trust_record": {
+      "path": "reviewer-authorization-v2.json",
+      "sha256": "ff160a49ad451f5b2cc2142038e921a0df06a3c712e0a376faa3745f59caf783"
+    }
+  },
+  "runs_observed": false,
+  "schema_version": 1,
+  "sealed_bytes": [
+    {
+      "mutable": false,
+      "path": "independent-review-bootstrap-v2/.github/workflows/readback-authority-v2-activation.yml",
+      "repository": "chrizzatsu/acc-authority-independent-review",
+      "role": "independent_activation_terminal_readback_workflow",
+      "sha256": "d0f2def206d2084108b863d47f89db66b3842dd6de93bf2d8477660d19661924",
+      "target_path": ".github/workflows/readback-authority-v2-activation.yml"
+    },
+    {
+      "mutable": false,
+      "path": "independent-review-bootstrap-v2/.github/workflows/review-authority-v2.yml",
+      "repository": "chrizzatsu/acc-authority-independent-review",
+      "role": "independent_review_workflow",
+      "sha256": "b63b15a8e8102b1032f626fffa4d62a187165166de11989d13215f2893ec331c",
+      "target_path": ".github/workflows/review-authority-v2.yml"
+    },
+    {
+      "mutable": false,
+      "path": "independent-review-bootstrap-v2/bootstrap-contract.json",
+      "repository": "chrizzatsu/acc-authority-independent-review",
+      "role": "independent_review_bootstrap_contract",
+      "sha256": "037b8406ea6f426fe7b1267c7b59763dfb60be188c5f81204c93a83fff1bd3a3",
+      "target_path": "bootstrap-contract.json"
+    },
+    {
+      "mutable": false,
+      "path": "independent-review-bootstrap-v2/scripts/verify_kanban_review_v2.py",
+      "repository": "chrizzatsu/acc-authority-independent-review",
+      "role": "independent_review_validator",
+      "sha256": "32052fbddfe07fcf837a1ec496e5391ae1464627a3792fd070150d1d982ba643",
+      "target_path": "scripts/verify_kanban_review_v2.py"
+    },
+    {
+      "mutable": false,
+      "path": "protected-source-bootstrap-v2/.github/workflows/export-kanban-review-v2.yml",
+      "repository": "chrizzatsu/acc-authority-protected-source",
+      "role": "protected_source_workflow",
+      "sha256": "a56b0c601647960ca06f49c0af73b321c83aae16768d24693d54af39b336dc20",
+      "target_path": ".github/workflows/export-kanban-review-v2.yml"
+    },
+    {
+      "mutable": false,
+      "path": "protected-source-bootstrap-v2/bootstrap-contract.json",
+      "repository": "chrizzatsu/acc-authority-protected-source",
+      "role": "protected_source_bootstrap_contract",
+      "sha256": "f10259daf66fd26e83b65c2ae8489800ac9976dc0ee8baf1dcca8b44cb4b5c6b",
+      "target_path": "bootstrap-contract.json"
+    },
+    {
+      "mutable": false,
+      "path": "protected-source-bootstrap-v2/scripts/export_kanban_review_v2.py",
+      "repository": "chrizzatsu/acc-authority-protected-source",
+      "role": "protected_source_helper",
+      "sha256": "7206b39ca7098b9117d65a8e4569bd91137dddd1bed11b26c4ac26c46ac13959",
+      "target_path": "scripts/export_kanban_review_v2.py"
+    }
+  ],
+  "supports_later_separate_acc_releaser_activation_task_only": true,
+  "target_repositories": {
+    "chrizzatsu/acc-authority-independent-review": {
+      "admin_bypass_allowed": false,
+      "branch_protection": {
+        "admin_bypass": false,
+        "allow_deletions": false,
+        "allow_force_pushes": false,
+        "bypass_actors": [],
+        "enforcement": "active",
+        "ref_include": [
+          "refs/heads/main"
+        ],
+        "required_linear_history": true
+      },
+      "created": false,
+      "default_branch": "main",
+      "default_branch_ref": "refs/heads/main",
+      "github_hosted_standard_runner_only": true,
+      "maximum_incremental_spend_eur": "0.00",
+      "private": false,
+      "repository_id": null,
+      "repository_node_id": null,
+      "visibility": "public",
+      "workflow_dispatch_authorized": false,
+      "workflow_path": ".github/workflows/review-authority-v2.yml",
+      "workflow_state_on_creation": "disabled_manually",
+      "workflows_enabled": false,
+      "zero_spend_required": true
+    },
+    "chrizzatsu/acc-authority-protected-source": {
+      "admin_bypass_allowed": false,
+      "branch_protection": {
+        "admin_bypass": false,
+        "allow_deletions": false,
+        "allow_force_pushes": false,
+        "bypass_actors": [],
+        "enforcement": "active",
+        "ref_include": [
+          "refs/heads/main"
+        ],
+        "required_linear_history": true
+      },
+      "created": false,
+      "default_branch": "main",
+      "default_branch_ref": "refs/heads/main",
+      "github_hosted_standard_runner_only": true,
+      "maximum_incremental_spend_eur": "0.00",
+      "private": false,
+      "repository_id": null,
+      "repository_node_id": null,
+      "visibility": "public",
+      "workflow_dispatch_authorized": false,
+      "workflow_path": ".github/workflows/export-kanban-review-v2.yml",
+      "workflow_state_on_creation": "disabled_manually",
+      "workflows_enabled": false,
+      "zero_spend_required": true
+    }
+  },
+  "terminal_readback": {
+    "activation_artifact_files": [
+      "activation-record.json",
+      "activation-subject.json",
+      "canonical-binary-full-index.diff",
+      "external-review/external-activation-review-receipt.json",
+      "external-review/external-activation-review-receipt.sigstore.json",
+      "generated-activation-evidence.sigstore.json",
+      "name-status-find-renames-50.z",
+      "raw-full-index-find-renames-50.z",
+      "raw-provenance.json",
+      "raw-status-authoritative.z",
+      "raw/activation-jobs.json",
+      "raw/activation-run.json",
+      "raw/activation-runs.json",
+      "raw/decision-commit.json",
+      "raw/external-review-artifact.zip",
+      "raw/review-artifacts.json",
+      "raw/review-jobs.json",
+      "raw/review-run.json",
+      "raw/signed-review-artifact.zip",
+      "raw/workflow-run-event.json",
+      "raw/workflow-state-after.json",
+      "raw/workflow-state-before.json",
+      "raw/workflow-state-cleanup.json",
+      "signed-review/kanban-review-envelope.json",
+      "signed-review/preissuance-review-receipt.json",
+      "signed-review/preissuance-review-receipt.sigstore.json"
+    ],
+    "activation_artifact_name": "authority-v2-generated-activation-evidence-t_c298fca4",
+    "activation_job_name": "generated-activation-evidence",
+    "activation_record_digest_required": true,
+    "activation_workflow_path": ".github/workflows/review-authority-v2.yml",
+    "artifact_archive_digest_recomputed": true,
+    "artifact_content_digest_algorithm": "sha256(acc-authority-v2-generated-activation-artifact\\0 || sorted(uint64be(len(name))||name||uint64be(len(bytes))||bytes))",
+    "artifact_content_digest_recomputed": true,
+    "artifact_exactly_one_non_expired": true,
+    "caller_inputs": [],
+    "cleanup_step_name": "Reassert disabled state and delete ephemeral bytes",
+    "closed_receipt_required": true,
+    "collector_artifact_files": [
+      "terminal-activation-readback.json",
+      "terminal-activation-readback.sigstore.json"
+    ],
+    "collector_artifact_name": "authority-v2-closed-terminal-readback-t_c298fca4",
+    "collector_identity": "https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/readback-authority-v2-activation.yml@refs/heads/main",
+    "collector_job_name": "terminal-readback",
+    "collector_verifier": {
+      "ambient_execution_forbidden": true,
+      "entrypoint": "/usr/local/bin/python3 -I -B",
+      "files": {
+        "collector": "sha256:32052fbddfe07fcf837a1ec496e5391ae1464627a3792fd070150d1d982ba643",
+        "cosign": "sha256:4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+        "python3": "oci-manifest:sha256:2be5d3cb08aa616c6e38d922bd7072975166b2de772004f79ee1bae59fe983dc"
+      },
+      "head_tree_and_sole_parent_authenticated": true,
+      "mode": "digest-pinned-python-stdlib-no-authority-checkout",
+      "repository": "chrizzatsu/acc-attestation-authority",
+      "runtime": {
+        "executable_directory": "/usr/local/bin",
+        "executables": [
+          "python3"
+        ],
+        "image": "docker.io/library/python:3.13.7-slim@sha256:2be5d3cb08aa616c6e38d922bd7072975166b2de772004f79ee1bae59fe983dc",
+        "image_digest": "sha256:2be5d3cb08aa616c6e38d922bd7072975166b2de772004f79ee1bae59fe983dc",
+        "root_filesystem_read_only": true,
+        "semantic_authority": "python-3.13.7-stdlib-only",
+        "transitive_dependencies": "bound-by-oci-manifest-config-and-layer-digests"
+      }
+    },
+    "collector_workflow_path": ".github/workflows/readback-authority-v2-activation.yml",
+    "collector_workflow_sha256": "d0f2def206d2084108b863d47f89db66b3842dd6de93bf2d8477660d19661924",
+    "default_branch": "main",
+    "default_branch_ref": "refs/heads/main",
+    "exact_cosign_version": "v3.1.3",
+    "fresh_provenance": {
+      "attestation_fields": [
+        "generator",
+        "generator_binary_sha256",
+        "generator_platform",
+        "generator_version",
+        "rekor_generation",
+        "rekor_log_key_algorithm",
+        "route",
+        "signer_signature_algorithm",
+        "signing_window_end",
+        "signing_window_start",
+        "timestamp"
+      ],
+      "exact_fulcio_claims_required": true,
+      "generator": "cosign v3.1.3",
+      "generator_binary_sha256": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+      "generator_version": "v3.1.3",
+      "pre_registered_bundle_digest_required": false,
+      "rekor_generation": "rekor-v2",
+      "rekor_log_key_algorithm": "PKIX_ED25519",
+      "signer": "ecdsa-p256-sha256/Fulcio",
+      "timestamp": "rfc3161"
+    },
+    "issuer": "https://token.actions.githubusercontent.com",
+    "no_repository_or_content_mutation": true,
+    "permissions": {
+      "actions": "read",
+      "contents": "read",
+      "id-token": "write",
+      "metadata": "read"
+    },
+    "receipt_type": "acc-authority-v2-terminal-activation-readback",
+    "recursion_forbidden": true,
+    "repository": "chrizzatsu/acc-authority-independent-review",
+    "run_attempt": 1,
+    "terminal_api_readback_required": true,
+    "trigger": "workflow_run",
+    "trigger_workflow_name": "Sign exact protected Kanban Authority-v2 review"
+  },
+  "unavailable_reason": "No external independent activation-review receipt exists yet: this exact candidate must exist before any reviewer can bind its repository, base, head, tree, sole parent, canonical binary full-index diff, complete status-aware changed-path manifest, tracked and critical artifact digests and current reviewer-authorization bytes, so activation_authorized stays false. Neither chrizzatsu/acc-authority-protected-source nor chrizzatsu/acc-authority-independent-review exists, no workflow byte is published and no authorized run has been observed, so no live repository id, run id, run head, tree, artifact, envelope, receipt or Sigstore certificate workflow SHA can be pinned and F8 stays open. The pre-activation authorization above is a grant to the named acc-releaser activation lane only; it is not evidence that any activation happened.",
+  "workflows_written": false
+}

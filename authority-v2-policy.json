@@ -1,0 +1,370 @@
+{
+  "authority_id": "apex-acc-attestation-authority-v2",
+  "authority_repository": "https://github.com/chrizzatsu/acc-attestation-authority",
+  "authority_repository_base": {
+    "commit": "6495da3f5e6a5f797504dbd688a8490e1d44c6e9",
+    "tree": "f0b71975e74a11ba0c98fd75d6cf8b5c5fc422a0"
+  },
+  "candidate_review_contract": {
+    "canonical_diff_command": "git diff --binary --full-index --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ <base> <head> --",
+    "canonical_diff_digest": "sha256(stdout exact bytes)",
+    "canonical_diff_locale": "LC_ALL=C",
+    "changed_path_fields": [
+      "status",
+      "similarity",
+      "old_path",
+      "new_path",
+      "old_mode",
+      "new_mode",
+      "old_blob_oid",
+      "new_blob_oid",
+      "old_sha256",
+      "new_sha256"
+    ],
+    "changed_path_statuses": [
+      "A",
+      "M",
+      "D",
+      "R"
+    ],
+    "clean_exact_checkout_required": true,
+    "external_receipt_covers_internal_manifest": "AUTHORITY-V2-SHA256SUMS",
+    "internal_manifest_omits_only_itself": true,
+    "rename_source_and_destination_required": true,
+    "repository": "chrizzatsu/acc-attestation-authority"
+  },
+  "constraints": {
+    "customer_contact": false,
+    "database_action": false,
+    "external_send": false,
+    "local_or_self_signed_fallback": false,
+    "maximum_incremental_spend_eur": "0.00",
+    "principal_create_delete": false,
+    "production_access": false,
+    "public_repository_standard_runner_only": true
+  },
+  "cosign_verification_contract": {
+    "approved_standalone_sha256": {
+      "darwin/amd64": "2347488e5d5b25336644024dfeca5601b190e91197a71a917bda44744aff106c",
+      "darwin/arm64": "5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76",
+      "linux/amd64": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+      "linux/arm64": "c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
+    },
+    "bound_read_once_snapshots": true,
+    "certificate_claims": {
+      "github_workflow_ref": "refs/heads/main",
+      "github_workflow_repository": "chrizzatsu/acc-attestation-authority",
+      "github_workflow_sha": "exact reviewed activation SHA",
+      "github_workflow_trigger": "workflow_dispatch",
+      "identity": "https://github.com/chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation-v2.yml@refs/heads/main",
+      "issuer": "https://token.actions.githubusercontent.com"
+    },
+    "local_key_or_self_signed_fallback": false,
+    "original_path_symlink_allowed": false,
+    "version": "v3.1.3"
+  },
+  "expected_oidc_issuer": "https://token.actions.githubusercontent.com",
+  "expected_sigstore_identity": "https://github.com/chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation-v2.yml@refs/heads/main",
+  "expected_workflow_ref": "chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation-v2.yml@refs/heads/main",
+  "github_environment_contract": {
+    "admin_bypass": false,
+    "deployment_branch_policy": "all protected branches; the issuance workflow independently requires refs/heads/main",
+    "deployment_branch_policy_readback": "HTTP 404 is required when custom_branch_policies=false; exact HTTP 200 custom main policy is the only main-only mode",
+    "environment": "attestation",
+    "fallback_path": false,
+    "maximum_incremental_spend_eur": "0.00",
+    "prevent_self_review": true,
+    "repository_immutable_releases_required_before_issuance": true,
+    "required_reviewer_count_minimum": 1
+  },
+  "issuance_contract": {
+    "activation_sha": "The sole reviewed candidate head SHA, fast-forwarded unchanged to refs/heads/main and equal to GITHUB_SHA.",
+    "authenticated_github_issuance": {
+      "all_subjects_validated_before_first_sign_blob": true,
+      "candidate_binding_fields": [
+        "head_commit",
+        "head_tree",
+        "canonical_diff_sha256"
+      ],
+      "contract": "authenticated-github-environment-oidc-issuance-v2",
+      "durable_github_nonce_and_issuance_claim": true,
+      "environment": "attestation",
+      "github_server_fields": [
+        "run_id",
+        "run_attempt",
+        "job_id",
+        "run_scoped_environment_approval",
+        "actor",
+        "oidc_claims"
+      ],
+      "independent_review_receipt_sha256_required": true,
+      "independent_review_receipt_signature": {
+        "bundle_required": true,
+        "identity": "https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/review-authority-v2.yml@refs/heads/main",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "verified_before_first_subject_signature": true,
+        "verified_before_issuance": true,
+        "verified_immediately_before_publication_transport": true
+      },
+      "issuance_nonce": "unique lowercase 64-hex",
+      "oidc_audience": "sigstore",
+      "prevent_self_review": true,
+      "publication_revalidates_in_one_integrated_path": true,
+      "release": {
+        "exclusive_create": true,
+        "name": "ACC Clerk instance attestation v2",
+        "overwrite_allowed": false,
+        "tag": "clerk-instance-attestation-v2"
+      },
+      "replay_copy_cross_candidate_and_duplicate_publication_rejected": true,
+      "run_attempt": 1,
+      "run_scoped_environment_approval_binding": {
+        "endpoint_template": "https://api.github.com/repos/chrizzatsu/acc-attestation-authority/actions/runs/{run_id}/approvals",
+        "projected_response_fields": [
+          "environments",
+          "state",
+          "user"
+        ],
+        "synthetic_run_ids_forbidden": true
+      },
+      "subject_binding_before_signing": true,
+      "unsupported_deployment_relationship_evidence": {
+        "deployment_id_omitted": true,
+        "deployment_status_omitted": true,
+        "log_url_relationship_forbidden": true
+      }
+    },
+    "post_action_readback_required": true,
+    "postissuance_review_separate": true,
+    "preissuance_receipt_contract": {
+      "activation_authorized": false,
+      "activation_authorizes_only": "exact-acc-releaser-activation",
+      "activation_findings": [
+        {
+          "closure": "F8",
+          "finding": "F8-AUTHENTICATED-SOURCE-CHAIN-UNAVAILABLE"
+        }
+      ],
+      "approved": false,
+      "candidate_binding_fields": [
+        "repository",
+        "base_commit",
+        "base_tree",
+        "head_commit",
+        "head_tree",
+        "sole_parent",
+        "canonical_diff_sha256",
+        "changed_path_manifest",
+        "internal_manifest",
+        "artifact_sha256"
+      ],
+      "closure_matrix_keys": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "F6",
+        "F7",
+        "F8",
+        "F9",
+        "F10",
+        "F11",
+        "F12"
+      ],
+      "closure_matrix_required_false": [
+        "F8",
+        "F12"
+      ],
+      "closure_matrix_required_true": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "F6",
+        "F7",
+        "F9",
+        "F10",
+        "F11"
+      ],
+      "final_authority_approval": false,
+      "finding_fields": [
+        "closure",
+        "finding"
+      ],
+      "hard_stop_class": null,
+      "open_closures_recorded_as_findings": true,
+      "protected_identity_asset_binding_required": true,
+      "receipt_type": "acc-authority-v2-preissuance-independent-review",
+      "release_authorized": false,
+      "review_outcome": "ACTIVATION_ONLY",
+      "reviewer_profile": "acc-reviewer",
+      "schema_version": 2,
+      "unavailable_reason": "No documented GitHub release API establishes an exhaustive exclusive, compare-and-swap or atomic release transition binding the exact activation commit SHA and the verified immutable asset snapshots against every authorized writer, so closure F12 stays open, final approval and release authorization stay false, and only the strictly distinct activation-only decision may ever be authorized. No authenticated exporter run and no independent external activation-review receipt exist yet either, so closure F8 stays open and activation_authorized stays false at candidate handoff."
+    },
+    "preissuance_requires_exact_candidate_zero_findings": true,
+    "release_actions_role": "acc-releaser",
+    "release_collision_behavior": "fail_closed",
+    "release_tag": "clerk-instance-attestation-v2",
+    "release_tag_immutable": true
+  },
+  "issuance_state_at_candidate_handoff": {
+    "activation_authorized": false,
+    "approval": false,
+    "github_environment_secrets_staged": false,
+    "release_authorized": false,
+    "release_published": false,
+    "review_status": "pending_independent_preissuance_review",
+    "subjects_issued": false,
+    "subjects_signed": false,
+    "workflow_dispatched": false,
+    "workflow_live_on_main": false
+  },
+  "privacy": {
+    "contains_pii": false,
+    "contains_raw_clerk_instance_id": false,
+    "contains_raw_publishable_key": false,
+    "contains_secret": false,
+    "customer_data": false
+  },
+  "protected_identity_asset": {
+    "delete_on": "Delete immediately after the Authority-v2 release gate records canonical redacted readback, or at 2026-09-23T08:04:22Z, whichever occurs first.",
+    "directory_mode": "0700",
+    "environment_type_verified": "development",
+    "file_mode": "0600",
+    "publicly_persisted": false,
+    "raw_api_instance_id_present": true,
+    "raw_publishable_key_present": true,
+    "raw_values_emitted": false,
+    "required": true,
+    "sha256": "54cbc72994f8d2e2aefa5916bb02c3a3c26b5db11fbad86c9281fd4aa970f222"
+  },
+  "publication_contract": {
+    "activation_state": "unavailable",
+    "asset_upload_allowed": false,
+    "confirmed_absence_status": 404,
+    "documented_atomic_transition_available": false,
+    "documented_durable_pre_draft_state_available": false,
+    "draft_creation_allowed": false,
+    "exact_tag_ruleset": {
+      "bypass_actors": [],
+      "creation_allowed": false,
+      "enforcement": "active",
+      "full_readback_required": true,
+      "ref_exclude": [],
+      "ref_include": [
+        "refs/tags/clerk-instance-attestation-v2",
+        "refs/tags/authority-v2-publication-claim"
+      ],
+      "rules": [
+        {
+          "type": "deletion"
+        },
+        {
+          "parameters": {
+            "update_allows_fetch_and_merge": false
+          },
+          "type": "update"
+        }
+      ],
+      "strong_etag_and_canonical_digest_bound": true,
+      "target": "tag"
+    },
+    "exhaustive_writer_exclusion_available": false,
+    "guard_transport": {
+      "activation_state": "unavailable",
+      "contract_path": "github-app-guard-v2-contract.json",
+      "credential": "environment-gated GitHub App installation token",
+      "no_fallback": true,
+      "permission": "administration-read",
+      "read_transport_credential": "ephemeral job GITHUB_TOKEN restricted to GET",
+      "roles_distinct": true
+    },
+    "irreversible_publication_forbidden": true,
+    "no_fallback": true,
+    "overwrite_allowed": false,
+    "postcondition_immutable": true,
+    "prohibited_writes": [
+      "POST /repos/{repository}/releases",
+      "POST uploads.github.com release assets",
+      "POST /repos/{repository}/git/tags",
+      "POST /repos/{repository}/git/refs",
+      "PATCH /repos/{repository}/releases/{release_id}",
+      "DELETE /repos/{repository}/releases/{release_id}"
+    ],
+    "publication_guard_read_points": [
+      "before_every_reconciliation"
+    ],
+    "publication_performed": false,
+    "reconciliation": {
+      "bound_fields": [
+        "draft_id",
+        "durable_claim",
+        "final_tag",
+        "complete_asset_name_size_sha256_plan",
+        "publication_plan_sha256",
+        "immutable_releases_sha256",
+        "tag_ruleset_id_etag_canonical_sha256"
+      ],
+      "colliding_or_stranded_draft_rejected": true,
+      "exact": true,
+      "exhaustive_release_listing": true,
+      "idempotent": true,
+      "read_only": true,
+      "states": [
+        "unpublished",
+        "unclaimed_draft",
+        "claimed_draft",
+        "published"
+      ]
+    },
+    "release_name_and_body_exact_at_every_readback": true,
+    "repository_immutable_releases_exact_readback_required": true,
+    "tag_or_claim_write_allowed": false,
+    "unavailable_reason": "GitHub documents neither a durable server-owned pre-draft publication state nor an atomic draft-to-immutable transition, so no fallible publication write is exactly reconstructable and every draft, upload, tag and claim write is prohibited.",
+    "writer_exclusion_contract_path": "publication-writer-exclusion-v2.json"
+  },
+  "reviewer_owned_interpretations": {
+    "loopback_api_url_or_sdk_owned_test_fetch": "Acceptable only when the actual @clerk/backend SDK request, authentication, deserialization and error closures execute, with no caller-reachable authority mutation or transport substitution.",
+    "non_detached_candidate_child": "Acceptable only for the exact committed candidate clean-launched outside the caller-compromisable heap, with contained descendant lifecycle and no helper or launcher substitution."
+  },
+  "schema_version": 2,
+  "subject": {
+    "acc_production_base_sha": "ebb3af3df79438dbe926584f637a5e489f2682dd",
+    "clerk_api_instance_id_fingerprint_sha256": "61ca182dce2bc4287d70a86b663dca397215613a10ed5f598f99cf11d63abb07",
+    "clerk_publishable_key_fingerprint_sha256": "61b16bead7b0155c4e1d23ce83031702c5fce95f3799ea5a2a0f501e99cc057c",
+    "fingerprint_algorithms": {
+      "api_instance_id": "sha256(acc-clerk-api-instance-v1\\0 || exact Clerk API instance id bytes)",
+      "publishable_key": "sha256(acc-clerk-instance-v1\\0 || exact publishable key bytes)"
+    },
+    "required_environment_type": "development"
+  },
+  "temporal_subject_contract": {
+    "cases": {
+      "future": {
+        "expected_freshness_result": "reject_future",
+        "not_after_utc": "2030-12-31T23:59:59Z",
+        "not_before_utc": "2030-01-01T00:00:00Z"
+      },
+      "in_window": {
+        "expected_freshness_result": "accept_freshness_only",
+        "not_after_utc": "2029-12-31T23:59:59Z",
+        "not_before_utc": "2026-01-01T00:00:00Z"
+      },
+      "stale": {
+        "expected_freshness_result": "reject_stale",
+        "not_after_utc": "2025-12-31T23:59:59Z",
+        "not_before_utc": "2025-01-01T00:00:00Z"
+      }
+    },
+    "freshness_limit": "Freshness acceptance alone never authorizes mutation; every operation, identity, containment, cleanup, zero-spend, no-contact and no-customer-data gate remains mandatory.",
+    "required_case_order": [
+      "future",
+      "in_window",
+      "stale"
+    ],
+    "signature_requirement": "Each exact canonical JSON subject is separately keyless-signed and verified with the literal certificate identity and issuer pinned here; local/private/self-signed key fallback is forbidden.",
+    "trusted_time_source": "Each case evaluation time is derived only after successful cosign verification from that bundle's verified Rekor transparency-log integratedTime. Subjects, workflow inputs, environment variables, local clocks and caller arguments are never trusted-time sources."
+  }
+}

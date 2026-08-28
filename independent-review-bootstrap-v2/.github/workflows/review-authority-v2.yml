@@ -1,0 +1,1360 @@
+name: Sign exact protected Kanban Authority-v2 review
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Sign exact protected Kanban Authority-v2 review]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-review-authority-v2
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    environment: independent-review
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Close inherited Git credential scopes before review checkout
+        run: |
+          set -euo pipefail
+          umask 077
+          readonly INVENTORY="$RUNNER_TEMP/authority-v2-git-config-inventory"
+          set +e
+          git config --show-origin --show-scope --name-only \
+            --get-regexp '^http\..*\.extraheader$' > "$INVENTORY" 2>/dev/null
+          inherited_status=$?
+          set -e
+          if (( inherited_status != 0 && inherited_status != 1 )); then
+            echo 'credential scope closure could not enumerate effective Git configuration' >&2
+            exit 1
+          fi
+          HEADER_NAMES=(http.extraHeader)
+          while IFS=$'\t' read -r scope origin header; do
+            [[ -n "$header" ]]
+            HEADER_NAMES+=("$header")
+            printf 'neutralizing inherited Git extraheader: %s %s %s\n' \
+              "$scope" "$origin" "$header" >&2
+          done < "$INVENTORY"
+          readonly CLOSED_GIT_HOME="$RUNNER_TEMP/authority-v2-git-home"
+          readonly CLOSED_GIT_XDG="$RUNNER_TEMP/authority-v2-git-xdg"
+          readonly CLOSED_GIT_GLOBAL="$RUNNER_TEMP/authority-v2-git-global.config"
+          mkdir -p "$CLOSED_GIT_HOME" "$CLOSED_GIT_XDG"
+          : > "$CLOSED_GIT_GLOBAL"
+          export HOME="$CLOSED_GIT_HOME"
+          export XDG_CONFIG_HOME="$CLOSED_GIT_XDG"
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_SYSTEM=/dev/null
+          export GIT_CONFIG_GLOBAL="$CLOSED_GIT_GLOBAL"
+          unset GIT_CONFIG_PARAMETERS
+          export GIT_CONFIG_COUNT="${#HEADER_NAMES[@]}"
+          index=0
+          for header in "${HEADER_NAMES[@]}"; do
+            key_variable="GIT_CONFIG_KEY_$index"
+            value_variable="GIT_CONFIG_VALUE_$index"
+            printf -v "$key_variable" '%s' "$header"
+            printf -v "$value_variable" '%s' ''
+            export "$key_variable" "$value_variable"
+            index=$((index + 1))
+          done
+          for header in "${HEADER_NAMES[@]}"; do
+            effective_value=missing
+            while IFS= read -r value; do
+              effective_value="$value"
+            done < <(git config --get-all "$header")
+            if [[ -n "$effective_value" ]]; then
+              echo 'credential residue remains after all-scope closure' >&2
+              exit 1
+            fi
+          done
+          {
+            echo "HOME=$HOME"
+            echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+            echo "GIT_CONFIG_NOSYSTEM=$GIT_CONFIG_NOSYSTEM"
+            echo "GIT_CONFIG_SYSTEM=$GIT_CONFIG_SYSTEM"
+            echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+            echo 'GIT_CONFIG_PARAMETERS='
+            echo "GIT_CONFIG_COUNT=$GIT_CONFIG_COUNT"
+            index=0
+            for header in "${HEADER_NAMES[@]}"; do
+              key_variable="GIT_CONFIG_KEY_$index"
+              echo "$key_variable=${!key_variable}"
+              echo "GIT_CONFIG_VALUE_$index="
+              index=$((index + 1))
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout exact independently reviewed bootstrap
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Bind this run to the pinned immutable bootstrap commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p authenticated
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA" > authenticated/independent-commit.json
+          python3 scripts/verify_kanban_review_v2.py --phase bootstrap
+
+      - name: Acquire protected-source read token
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.KANBAN_SOURCE_READER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.KANBAN_SOURCE_READER_APP_PRIVATE_KEY }}
+          owner: chrizzatsu
+          repositories: acc-authority-protected-source
+          permission-actions: read
+          permission-contents: read
+          permission-metadata: read
+
+      - name: Select the sole authorized protected-source run from the complete run set
+        id: authorized-run
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p authenticated/raw
+          SOURCE_REPO="$(jq -er '.authorized_source_run.source_repository' bootstrap-contract.json)"
+          API='https://api.github.com'
+          RUNS="$API/repos/$SOURCE_REPO/actions/workflows/export-kanban-review-v2.yml/runs"
+          # One exhaustive traversal that terminates only where the server
+          # advertises no further page. Selection and receipt creation consume
+          # exactly this captured set, so no fixed page count is assumed and
+          # the selected run can never differ from the run the receipt binds.
+          # The absence of a `rel="next"` is the normal end of the traversal.
+          url="${RUNS}?per_page=100&page=1"
+          page=1
+          while : ; do
+            gh api -i --header "X-GitHub-Api-Version: 2022-11-28" "$url" \
+              > "authenticated/raw/runs-page-${page}.http"
+            nxt="$(tr -d '\r' < "authenticated/raw/runs-page-${page}.http" \
+              | sed -n '/^$/q;p' | { grep -i '^link:' || true; } | tr ',' '\n' \
+              | { grep 'rel="next"' || true; } \
+              | sed -n 's/.*<\(.*\)>.*/\1/p' | head -1 || true)"
+            if [ -z "$nxt" ]; then
+              break
+            fi
+            page=$((page + 1))
+            if [ "$page" -gt 100 ]; then
+              echo "unterminated pagination: $RUNS" >&2
+              exit 1
+            fi
+            url="$nxt"
+          done
+          SELECTED="$(python3 scripts/verify_kanban_review_v2.py --phase select)"
+          SOURCE_RUN_ID="$(printf '%s' "$SELECTED" | jq -er .source_run_id)"
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          SOURCE_RUN_HEAD="$(printf '%s' "$SELECTED" | jq -er .source_run_head_sha)"
+          [[ "$SOURCE_RUN_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          gh api "repos/$SOURCE_REPO/actions/runs/$SOURCE_RUN_ID" > authenticated/source-run.json
+          gh api "repos/$SOURCE_REPO/contents/.github/workflows/export-kanban-review-v2.yml?ref=$SOURCE_RUN_HEAD" \
+            -H 'Accept: application/vnd.github.raw' > authenticated/source-workflow.yml
+          gh api "repos/$SOURCE_REPO/contents/scripts/export_kanban_review_v2.py?ref=$SOURCE_RUN_HEAD" \
+            -H 'Accept: application/vnd.github.raw' > authenticated/source-helper.py
+          gh api "repos/$SOURCE_REPO/contents/bootstrap-contract.json?ref=$SOURCE_RUN_HEAD" \
+            -H 'Accept: application/vnd.github.raw' > authenticated/source-bootstrap-contract.json
+          gh api "repos/$SOURCE_REPO/git/commits/$SOURCE_RUN_HEAD" > authenticated/source-commit.json
+          echo "source_run_id=$SOURCE_RUN_ID" >> "$GITHUB_OUTPUT"
+
+
+      - name: Read the authenticated Authority candidate commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          AUTHORITY_REPO="$(jq -er .authorized_source_run.authority_repository bootstrap-contract.json)"
+          gh api "repos/$AUTHORITY_REPO/commits/heads/main" --jq '{sha: .sha, tree: {sha: .commit.tree.sha}}' > authenticated/authority-commit.json
+          AUTHORITY_HEAD="$(jq -er .sha authenticated/authority-commit.json)"
+          [[ "$AUTHORITY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          gh repo clone "$AUTHORITY_REPO" authenticated/authority-checkout -- --no-tags
+          git -C authenticated/authority-checkout checkout --quiet --detach "$AUTHORITY_HEAD"
+          git -C authenticated/authority-checkout status --porcelain=v1 | wc -c | grep -qx '0'
+
+      - name: Download immutable protected review result
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authority-v2-review-t_c298fca4
+          path: protected-review
+          repository: chrizzatsu/acc-authority-protected-source
+          run-id: ${{ steps.authorized-run.outputs.source_run_id }}
+          github-token: ${{ steps.source-token.outputs.token }}
+
+      - name: Receive the external immutable installation grant record
+        env:
+          # The App identity is a *variable*, not a credential: it selects the
+          # key below and nothing else. The installation id is never taken
+          # from a variable at all - it is derived from the authenticated
+          # server, from the installation that really covers the repository.
+          GH_APP_CLIENT_ID: ${{ vars.KANBAN_SOURCE_READER_APP_CLIENT_ID }}
+          # The reviewed App private-key chain, the same secret the pinned
+          # token action is given. No persisted App JWT secret exists any
+          # more: a stored JWT is a long-lived bearer credential that says
+          # nothing about *this* run, and it was accepted here without any
+          # proof that it was still valid.
+          GH_APP_PRIVATE_KEY: ${{ secrets.KANBAN_SOURCE_READER_APP_PRIVATE_KEY }}
+          # The pinned token action's own issuance outputs: the App and the
+          # installation that minted the runtime token this job is holding.
+          # They bind the grant record to the actual credential. The token
+          # output is never written.
+          RUNTIME_APP_SLUG: ${{ steps.source-token.outputs.app-slug }}
+          RUNTIME_INSTALLATION_ID: ${{ steps.source-token.outputs.installation-id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p authenticated/raw
+          test -n "$RUNTIME_APP_SLUG"
+          [[ "$RUNTIME_INSTALLATION_ID" =~ ^[1-9][0-9]*$ ]]
+          test -n "$GH_APP_CLIENT_ID"
+          test -n "$GH_APP_PRIVATE_KEY"
+          jq -n \
+            --arg app_slug "$RUNTIME_APP_SLUG" \
+            --argjson installation_id "$RUNTIME_INSTALLATION_ID" \
+            '{app_slug: $app_slug, installation_id: $installation_id}' \
+            > authenticated/runtime-token-grant.json
+          test -s authenticated/runtime-token-grant.json
+          # A fresh, short-lived App JWT, minted for this run alone out of the
+          # reviewed App private-key chain. It is produced inside a command
+          # substitution every time it is needed, so the token bytes never
+          # reach the filesystem, the environment file or the log; the key
+          # itself is fed to openssl on a file descriptor and never written.
+          # GitHub refuses a JWT whose lifetime exceeds ten minutes, so the
+          # window below is deliberately far inside that bound.
+          APP_JWT_ISSUED_AT="$(( $(date +%s) - 60 ))"
+          APP_JWT_EXPIRES_AT="$(( APP_JWT_ISSUED_AT + 540 ))"
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          mint_app_jwt() {
+            local header payload signing signature
+            header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+            payload="$(jq -cn \
+              --argjson iat "$APP_JWT_ISSUED_AT" \
+              --argjson exp "$APP_JWT_EXPIRES_AT" \
+              --arg iss "$GH_APP_CLIENT_ID" \
+              '{iat: $iat, exp: $exp, iss: $iss}' | b64url)"
+            signing="${header}.${payload}"
+            signature="$(printf '%s' "$signing" \
+              | openssl dgst -sha256 -sign <(printf '%s\n' "$GH_APP_PRIVATE_KEY") -binary \
+              | b64url)"
+            printf '%s.%s' "$signing" "$signature"
+          }
+          # Only the claim window is recorded, never the token. The validator
+          # requires this window to cover the instant the server itself
+          # recorded the grant read, so an expired or not-yet-valid chain
+          # fails closed instead of being believed.
+          jq -n \
+            --arg app_client_id "$GH_APP_CLIENT_ID" \
+            --argjson issued_at "$APP_JWT_ISSUED_AT" \
+            --argjson expires_at "$APP_JWT_EXPIRES_AT" \
+            '{app_client_id: $app_client_id, expires_at: $expires_at,
+              issued_at: $issued_at}' \
+            > authenticated/runtime-app-jwt.json
+          test -s authenticated/runtime-app-jwt.json
+          # The record may never carry credential material of any kind.
+          jq -e 'has("token") or has("jwt") or has("private_key")
+                 or has("private-key") or has("pem") | not' \
+            authenticated/runtime-app-jwt.json > /dev/null
+          # `/app` names the App this credential really authenticates as. Its
+          # identity is derived here, from the server, and never assumed.
+          GH_TOKEN="$(mint_app_jwt)" gh api -i \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/app" \
+            > authenticated/raw/app.http
+          test -s authenticated/raw/app.http
+          # `/repos/{source}/installation` names the installation that really
+          # covers the repository the runtime token reads. The installation id
+          # comes from this authenticated response - not from a variable - so
+          # the grant read below can only be the grant of that installation.
+          SOURCE_REPO="$(jq -er '.authorized_source_run.source_repository' bootstrap-contract.json)"
+          GH_TOKEN="$(mint_app_jwt)" gh api -i \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$SOURCE_REPO/installation" \
+            > authenticated/raw/repository-installation.http
+          test -s authenticated/raw/repository-installation.http
+          GH_APP_INSTALLATION_ID="$(tr -d '\r' < authenticated/raw/repository-installation.http \
+            | sed -n '/^$/,$p' | tail -n +2 | jq -er .id)"
+          [[ "$GH_APP_INSTALLATION_ID" =~ ^[1-9][0-9]*$ ]]
+          # The runtime issuance must be the very installation the grant read
+          # below covers; the helper refuses any other pairing.
+          [[ "$RUNTIME_INSTALLATION_ID" == "$GH_APP_INSTALLATION_ID" ]]
+          # The grant record is never supplied by the candidate and never
+          # inferred from a header. It is the raw captured response of one
+          # authenticated read-only GET on the canonical installation
+          # endpoint, performed with the freshly minted App credential that
+          # alone can read it. No value is invented here: the helper
+          # authenticates the App, installation id, account, target type,
+          # settings URL, actual permissions, repository selection, freshness
+          # and digest out of these exact bytes.
+          GH_TOKEN="$(mint_app_jwt)" gh api -i \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/app/installations/$GH_APP_INSTALLATION_ID" \
+            > authenticated/raw/installation-grant.http
+          test -s authenticated/raw/installation-grant.http
+
+      - name: Capture every canonical protected-source server response
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_RUN_ID: ${{ steps.authorized-run.outputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p authenticated/raw
+          SOURCE_REPO="$(jq -er '.authorized_source_run.source_repository' bootstrap-contract.json)"
+          SOURCE_RUN_HEAD="$(jq -er .head_sha authenticated/source-run.json)"
+          API='https://api.github.com'
+          # Every read below is a documented read-only GET captured with its
+          # exact status line and header block. Nothing is written, nothing is
+          # caller selectable, and no provenance is ever synthesised later:
+          # the helper derives the sealed document from these bytes alone.
+          # No request URL is ever written by this lane: a self-written
+          # sidecar would be exactly the caller-shaped provenance the helper
+          # refuses. Single reads are bound to the canonical `url` the payload
+          # itself carries; pages are bound to the server's own `rel="next"`.
+          capture() {
+            url="$1"; name="$2"
+            gh api -i --header "X-GitHub-Api-Version: 2022-11-28" "$url" \
+              > "authenticated/raw/${name}.http"
+          }
+          # Terminates cleanly under `set -euo pipefail`: the absence of a
+          # `rel="next"` is the normal end of the traversal, never an error.
+          # `gh api -i` emits CRLF header lines, so the header/body separator
+          # is a CR-only line. Strip CR before splitting, or the blank line
+          # never matches and every body read silently returns nothing.
+          capture_body() {
+            tr -d '\r' < "$1" | sed -n '/^$/,$p' | tail -n +2
+          }
+          next_link() {
+            tr -d '\r' < "$1" | sed -n '/^$/q;p' \
+              | { grep -i '^link:' || true; } | tr ',' '\n' \
+              | { grep 'rel="next"' || true; } \
+              | sed -n 's/.*<\(.*\)>.*/\1/p' | head -1
+          }
+          # Follow `rel="next"` until the server itself terminates the
+          # traversal; a fixed page set is never assumed.
+          capture_pages() {
+            endpoint="$1"; prefix="$2"
+            url="${endpoint}?per_page=100&page=1"
+            page=1
+            while : ; do
+              capture "$url" "${prefix}-page-${page}"
+              nxt="$(next_link "authenticated/raw/${prefix}-page-${page}.http" || true)"
+              if [ -z "$nxt" ]; then
+                break
+              fi
+              page=$((page + 1))
+              if [ "$page" -gt 100 ]; then
+                echo "unterminated pagination: $endpoint" >&2
+                exit 1
+              fi
+              url="$nxt"
+            done
+          }
+          capture "$API/repos/$SOURCE_REPO" repository
+          # The authenticated runtime readback publishes the repository
+          # selection and the exhaustive inventory - never grants. GitHub
+          # exposes no endpoint through which a runtime installation token can
+          # read its own grants, so the grants come only from the immutable
+          # `authorized_credential_grant` record sealed in this bootstrap
+          # contract, which the external reviewer authenticated before this
+          # lane ran. The readback below binds that record to the credential
+          # actually in use; endpoint requirement headers are never grants.
+          # The candidate supplies no grant evidence: the contract ships
+          # `state: unavailable` with every live field null. The actual record
+          # comes only from the external immutable grant artifact - the raw
+          # captured response of an authenticated GET on the canonical
+          # /app/installations/{id} endpoint, performed by the provisioner
+          # lane with the App JWT and delivered to this run. Its absence fails
+          # this lane closed.
+          [[ "$(jq -er '.authorized_credential_grant_contract.state' bootstrap-contract.json)" == "unavailable" ]]
+          jq -e '.authorized_credential_grant_contract
+                 | (.installation_id == null) and (.permissions == null)
+                   and (.record_sha256 == null) and (.repositories == null)
+                   and (.repository_selection == null)' \
+            bootstrap-contract.json > /dev/null
+          GRANT_CAPTURE="$(jq -er '.authorized_credential_grant_contract.artifact_capture_path' bootstrap-contract.json)"
+          test -s "$GRANT_CAPTURE"
+          capture_pages "$API/installation/repositories" installation
+          capture "$API/repos/$SOURCE_REPO/actions/runs/$SOURCE_RUN_ID" run
+          capture "$API/repos/$SOURCE_REPO/git/commits/$SOURCE_RUN_HEAD" commit
+          SOURCE_TREE="$(jq -er .tree.sha authenticated/source-commit.json)"
+          capture "$API/repos/$SOURCE_REPO/git/trees/$SOURCE_TREE?recursive=1" tree
+          capture_pages "$API/repos/$SOURCE_REPO/actions/runs/$SOURCE_RUN_ID/jobs" jobs
+          capture_pages "$API/repos/$SOURCE_REPO/actions/runs/$SOURCE_RUN_ID/artifacts" artifacts
+          # The exact required paths, by canonical blob id from the same tree.
+          index=1
+          for path in \
+            .github/workflows/export-kanban-review-v2.yml \
+            bootstrap-contract.json \
+            scripts/export_kanban_review_v2.py ; do
+            blob="$(capture_body authenticated/raw/tree.http \
+              | jq -er --arg p "$path" '.tree[] | select(.path == $p) | .sha')"
+            [[ "$blob" =~ ^[0-9a-f]{40}$ ]]
+            capture "$API/repos/$SOURCE_REPO/git/blobs/$blob" "blob-${index}"
+            index=$((index + 1))
+          done
+          # The immutable artifact archive, by canonical server id only. Its
+          # size and digest are recomputed over exactly these bytes before any
+          # receipt may exist.
+          # Selected across every fully traversed artifact page, never from a
+          # single assumed first page.
+          for page in authenticated/raw/artifacts-page-*.http ; do
+            capture_body "$page"
+          done | jq -es --arg n 'authority-v2-review-t_c298fca4' \
+            '[.[].artifacts[] | select(.name == $n and .expired == false)]
+             | if length == 1 then .[0] else
+                 error("artifact selection is absent or ambiguous") end' \
+            > authenticated/selected-artifact.json
+          ARTIFACT_ID="$(jq -er .id authenticated/selected-artifact.json)"
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          ARTIFACT_DIGEST="$(jq -er .digest authenticated/selected-artifact.json)"
+          [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          gh api "repos/$SOURCE_REPO/actions/artifacts/$ARTIFACT_ID/zip" \
+            > authenticated/artifact-archive.zip
+          python3 scripts/verify_kanban_review_v2.py --phase server-objects
+
+      - name: Authenticate every executed source and validator byte
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_kanban_review_v2.py --phase chain
+
+      - name: Install pinned keyless Sigstore client
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+
+      - name: Sign only the protected-source receipt
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle protected-review/preissuance-review-receipt.sigstore.json \
+            protected-review/preissuance-review-receipt.json
+
+      - name: Require the certificate workflow SHA to equal this pinned bootstrap commit
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle protected-review/preissuance-review-receipt.sigstore.json \
+            --certificate-identity 'https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/review-authority-v2.yml@refs/heads/main' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            --certificate-github-workflow-repository 'chrizzatsu/acc-authority-independent-review' \
+            --certificate-github-workflow-ref 'refs/heads/main' \
+            --certificate-github-workflow-sha "$GITHUB_SHA" \
+            --certificate-github-workflow-trigger 'workflow_dispatch' \
+            protected-review/preissuance-review-receipt.json
+
+      - name: Upload immutable signed review artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-v2-signed-review-t_c298fca4
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            protected-review/kanban-review-envelope.json
+            protected-review/preissuance-review-receipt.json
+            protected-review/preissuance-review-receipt.sigstore.json
+
+      - name: Compose and deliver the independent reviewer decision
+        id: deliver-decision
+        env:
+          ACC_REVIEWER_SIGNING_KEY: ${{ runner.temp }}/reviewer-gnupg
+          ACC_REVIEWER_SIGNING_KEY_MATERIAL: ${{ secrets.DECISION_DELIVERY_SIGNING_KEY }}
+          # The delivery commit is the *reviewer's* commit, so it is created
+          # with the reviewer's own credential and not with this workflow's
+          # installation token. Only a user-scoped credential can read back
+          # `GET /user` and `GET /user/gpg_keys`, which is exactly how the
+          # lane learns the identity GitHub will accept a signature under and
+          # proves the writer really is the expected decision writer. An
+          # installation token cannot read either endpoint, so the delivery
+          # fails closed rather than signing bytes GitHub would never verify.
+          ACC_REVIEWER_DELIVERY_TOKEN: ${{ secrets.DECISION_DELIVERY_WRITER_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # No checkout/default credential may survive into the only write
+          # boundary. Remove every inherited local extraheader by name, then
+          # prove no Authorization extraheader remains at any Git config
+          # scope. The writer token is supplied to exactly one process below.
+          unset GH_TOKEN GITHUB_TOKEN
+          mapfile -t inherited_auth_headers < <(
+            git config --local --name-only \
+              --get-regexp '^http\..*\.extraheader$' || true
+          )
+          for header in "${inherited_auth_headers[@]}"; do
+            git config --local --unset-all "$header"
+          done
+          if git config --show-origin --get-regexp \
+               '^http\..*\.extraheader$' 2>/dev/null \
+             | grep -i 'authorization:'; then
+            echo 'an inherited Git Authorization extraheader remains' >&2
+            exit 1
+          fi
+          AUTHORITY_HEAD="$(jq -er .sha authenticated/authority-commit.json)"
+          [[ "$AUTHORITY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          DECISION_PATH="decisions/$AUTHORITY_HEAD.json"
+          AUTHORED_PATH="reviewer-authored-decisions/$AUTHORITY_HEAD.json"
+          # The independent reviewer authors the decision in this repository,
+          # at a path that cannot be named before this exact candidate exists.
+          # The verify script authors no verdict: it binds those authored
+          # bytes to the candidate and publishes them unchanged. This step
+          # only delivers them as a signed, reviewer-owned commit on the
+          # protected delivery branch.
+          # The reviewer's own OpenPGP secret key, held only as an encrypted
+          # secret of the reviewer's own repository and imported into a
+          # private keyring for this runner alone. The REST create-commit
+          # `signature` field is the commit's PGP signature, so the key that
+          # signs it must be an OpenPGP key the reviewer has registered with
+          # GitHub. It is never printed and never persisted beyond this run.
+          test -n "$ACC_REVIEWER_SIGNING_KEY_MATERIAL"
+          mkdir -m 700 -p "$ACC_REVIEWER_SIGNING_KEY"
+          printf '%s\n' "$ACC_REVIEWER_SIGNING_KEY_MATERIAL" \
+            | gpg --batch --quiet --homedir "$ACC_REVIEWER_SIGNING_KEY" --import
+          gpg --batch --quiet --homedir "$ACC_REVIEWER_SIGNING_KEY" \
+            --list-secret-keys > /dev/null
+          test -s "$AUTHORED_PATH"
+          python3 scripts/verify_kanban_review_v2.py --phase deliver-decision
+          test -f "$DECISION_PATH"
+          cmp -s "$AUTHORED_PATH" "$DECISION_PATH"
+          # The delivery is a real, reviewer-owned, server-verifiable
+          # OpenPGP-signed commit created through the documented Git Data API.
+          # It is installed by a genuine compare-and-swap on the target
+          # reference itself: GitHub's REST reference-update endpoint accepts
+          # no expected-old-OID, so the installation goes over the Git wire
+          # protocol, whose update command is
+          # `<old-oid> <new-oid> refs/heads/main` and is applied by the server
+          # inside a reference transaction that refuses it unless the branch
+          # still holds exactly that old OID. `--force-with-lease` states the
+          # expectation this run read for itself. If the primitive is
+          # unavailable or the swap is refused the delivery fails closed and
+          # the branch is never touched, and the resulting ref, commit, tree
+          # and path are all read back afterwards so a writer that raced in
+          # between is caught rather than reported as success.
+          # The signing key is the independent reviewer's alone; this lane can
+          # produce a signature but can never make GitHub accept one, and the
+          # created commit is kept only if the server itself reports a
+          # verified signature over the exact commit object.
+          test -n "$ACC_REVIEWER_DELIVERY_TOKEN"
+          GH_TOKEN="$ACC_REVIEWER_DELIVERY_TOKEN" \
+            python3 scripts/verify_kanban_review_v2.py --phase deliver-commit \
+            > "$RUNNER_TEMP/reviewer-decision-delivery-commit.json"
+          DELIVERY="$RUNNER_TEMP/reviewer-decision-delivery-commit.json"
+          DELIVERY_SHA="$(jq -er .commit_sha "$DELIVERY")"
+          [[ "$DELIVERY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(jq -er .commit_parent "$DELIVERY")" == "$GITHUB_SHA" ]]
+          [[ "$(jq -er .signature_verified "$DELIVERY")" == "true" ]]
+          [[ "$(jq -er '.changed_paths | length' "$DELIVERY")" == "1" ]]
+          [[ "$(jq -er '.changed_paths[0]' "$DELIVERY")" == "$DECISION_PATH" ]]
+          # The compare-and-swap really was on the target reference, under
+          # the exact expected old OID, and the race read-back happened.
+          [[ "$(jq -er .cas_ref "$DELIVERY")" == "refs/heads/main" ]]
+          [[ "$(jq -er .cas_expected_old_oid "$DELIVERY")" == "$GITHUB_SHA" ]]
+          [[ "$(jq -er .cas_primitive "$DELIVERY")" \
+             == "git-receive-pack-expected-old-oid" ]]
+          # ... and the primitive was proven to enforce that old OID *before*
+          # the target reference was touched at all. Using the primitive is
+          # not the same as proving it is in force: a git or a transport that
+          # accepted the update command and dropped its precondition would
+          # already have rewritten the branch by the time it was found out.
+          [[ "$(jq -er .cas_capability_proven "$DELIVERY")" == "true" ]]
+          [[ "$(jq -er .cas_capability_probe "$DELIVERY")" \
+             == "stale-lease-refused-and-honest-lease-applied" ]]
+          [[ "$(jq -er .readback_decision_sha256 "$DELIVERY")" \
+             == "$(sha256sum "$DECISION_PATH" | cut -d' ' -f1)" ]]
+          cp "$DELIVERY" \
+            authenticated/reviewer-decision-delivery-operation.json
+          echo "delivery_sha=$DELIVERY_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Acquire narrow administration-read delivery token
+        id: delivery-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.DECISION_DELIVERY_READER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DECISION_DELIVERY_READER_APP_PRIVATE_KEY }}
+          owner: chrizzatsu
+          repositories: acc-authority-independent-review
+          permission-administration: read
+          permission-contents: read
+
+      - name: Authenticate the sealed reviewer decision delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ADMIN_TOKEN: ${{ steps.delivery-token.outputs.token }}
+          DELIVERY_SHA: ${{ steps.deliver-decision.outputs.delivery_sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          AUTHORITY_HEAD="$(jq -er .sha authenticated/authority-commit.json)"
+          [[ "$AUTHORITY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          # The delivery commit is a child of GITHUB_SHA, created and pushed
+          # by the preceding delivery step. All reads below use the delivery
+          # SHA, not GITHUB_SHA, so the evidence binds to the actual commit
+          # that introduced the decision path.
+          [[ "$DELIVERY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          DECISION_PATH="decisions/$AUTHORITY_HEAD.json"
+          test -f "$DECISION_PATH"
+          gh api "repos/$GITHUB_REPOSITORY" > authenticated/reviewer-repository.json
+          gh api "repos/$GITHUB_REPOSITORY/commits/$DELIVERY_SHA" \
+            > authenticated/reviewer-decision-commit.json
+          # Branch protection is an administration-scoped read: it uses the
+          # dedicated administration-read installation token and is captured
+          # raw, so the server's own scope statement travels with the evidence.
+          mkdir -p authenticated/raw
+          GH_TOKEN="$GH_ADMIN_TOKEN" gh api -i \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main/protection" \
+            > authenticated/raw/protection.http
+          gh api "repos/$GITHUB_REPOSITORY/contents/$DECISION_PATH?ref=$DELIVERY_SHA" \
+            > authenticated/reviewer-decision-blob.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/$DECISION_PATH?ref=$DELIVERY_SHA" \
+            > authenticated/reviewer-decision-readback.json
+          python3 scripts/verify_kanban_review_v2.py --phase decision-delivery
+
+      - name: Package the reviewer decision authored for this exact candidate
+        run: |
+          set -euo pipefail
+          umask 077
+          test -s authenticated/reviewer-decision-delivery.json
+          test -s authenticated/server-objects.json
+          python3 scripts/verify_kanban_review_v2.py --phase external-review
+
+      - name: Sign the immutable external activation review receipt
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle protected-review/external-activation-review-receipt.sigstore.json \
+            protected-review/external-activation-review-receipt.json
+
+      - name: Require the external review certificate to bind this pinned commit
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle protected-review/external-activation-review-receipt.sigstore.json \
+            --certificate-identity 'https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/review-authority-v2.yml@refs/heads/main' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            --certificate-github-workflow-repository 'chrizzatsu/acc-authority-independent-review' \
+            --certificate-github-workflow-ref 'refs/heads/main' \
+            --certificate-github-workflow-sha "$GITHUB_SHA" \
+            --certificate-github-workflow-trigger 'workflow_dispatch' \
+            protected-review/external-activation-review-receipt.json
+
+      - name: Upload immutable external activation review artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-v2-external-activation-review-t_c298fca4
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            protected-review/external-activation-review-receipt.json
+            protected-review/external-activation-review-receipt.sigstore.json
+
+  # -------------------------------------------------------------------------
+  # The separately triggered, inputless one-shot activation-evidence job.
+  #
+  # It runs only in the distinct workflow_run execution caused by the completed
+  # immutable review, so activation evidence can never ride the review job's
+  # success. It consumes authenticated zero-finding artifacts, disables the
+  # workflow, binds the exact Cosign v3.1.3 binary and reviewed candidate, and
+  # generates exactly one candidate-specific output before driving the
+  # unchanged Authority verifier over the closed record.
+  #
+  # The verifier requires the exact ECDSA-P256 signer / Ed25519 Rekor-v2 log /
+  # RFC 3161 route. Nothing this job reports is an authorization.
+  # -------------------------------------------------------------------------
+  generated-activation-evidence:
+    name: generated-activation-evidence
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    environment: independent-review
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Close inherited Git credential scopes before activation checkout
+        run: |
+          set -euo pipefail
+          umask 077
+          readonly INVENTORY="$RUNNER_TEMP/authority-v2-git-config-inventory"
+          set +e
+          git config --show-origin --show-scope --name-only \
+            --get-regexp '^http\..*\.extraheader$' > "$INVENTORY" 2>/dev/null
+          inherited_status=$?
+          set -e
+          if (( inherited_status != 0 && inherited_status != 1 )); then
+            echo 'credential scope closure could not enumerate effective Git configuration' >&2
+            exit 1
+          fi
+          HEADER_NAMES=(http.extraHeader)
+          while IFS=$'\t' read -r scope origin header; do
+            [[ -n "$header" ]]
+            HEADER_NAMES+=("$header")
+            printf 'neutralizing inherited Git extraheader: %s %s %s\n' \
+              "$scope" "$origin" "$header" >&2
+          done < "$INVENTORY"
+          readonly CLOSED_GIT_HOME="$RUNNER_TEMP/authority-v2-git-home"
+          readonly CLOSED_GIT_XDG="$RUNNER_TEMP/authority-v2-git-xdg"
+          readonly CLOSED_GIT_GLOBAL="$RUNNER_TEMP/authority-v2-git-global.config"
+          mkdir -p "$CLOSED_GIT_HOME" "$CLOSED_GIT_XDG"
+          : > "$CLOSED_GIT_GLOBAL"
+          export HOME="$CLOSED_GIT_HOME"
+          export XDG_CONFIG_HOME="$CLOSED_GIT_XDG"
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_SYSTEM=/dev/null
+          export GIT_CONFIG_GLOBAL="$CLOSED_GIT_GLOBAL"
+          unset GIT_CONFIG_PARAMETERS
+          export GIT_CONFIG_COUNT="${#HEADER_NAMES[@]}"
+          index=0
+          for header in "${HEADER_NAMES[@]}"; do
+            key_variable="GIT_CONFIG_KEY_$index"
+            value_variable="GIT_CONFIG_VALUE_$index"
+            printf -v "$key_variable" '%s' "$header"
+            printf -v "$value_variable" '%s' ''
+            export "$key_variable" "$value_variable"
+            index=$((index + 1))
+          done
+          for header in "${HEADER_NAMES[@]}"; do
+            effective_value=missing
+            while IFS= read -r value; do
+              effective_value="$value"
+            done < <(git config --get-all "$header")
+            if [[ -n "$effective_value" ]]; then
+              echo 'credential residue remains after all-scope closure' >&2
+              exit 1
+            fi
+          done
+          {
+            echo "HOME=$HOME"
+            echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+            echo "GIT_CONFIG_NOSYSTEM=$GIT_CONFIG_NOSYSTEM"
+            echo "GIT_CONFIG_SYSTEM=$GIT_CONFIG_SYSTEM"
+            echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+            echo 'GIT_CONFIG_PARAMETERS='
+            echo "GIT_CONFIG_COUNT=$GIT_CONFIG_COUNT"
+            index=0
+            for header in "${HEADER_NAMES[@]}"; do
+              key_variable="GIT_CONFIG_KEY_$index"
+              echo "$key_variable=${!key_variable}"
+              echo "GIT_CONFIG_VALUE_$index="
+              index=$((index + 1))
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout exact independently reviewed activation bootstrap
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Fail closed to one globally unique activation execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p activation/raw activation/external-review activation/signed-review
+          [[ "$GITHUB_RUN_ATTEMPT" == "1" ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/review-authority-v2.yml" \
+            > activation/raw/workflow-state-before.json
+          gh workflow disable review-authority-v2.yml --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/review-authority-v2.yml" \
+            > activation/raw/workflow-state-after.json
+          [[ "$(jq -er .state activation/raw/workflow-state-after.json)" \
+             == "disabled_manually" ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > activation/raw/activation-run.json
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            > activation/raw/activation-jobs.json
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/review-authority-v2.yml/runs?event=workflow_run&per_page=100" \
+            > activation/raw/activation-runs.json
+          [[ "$(jq -er '[.[] | .workflow_runs[] | select(.event == "workflow_run")] | length' \
+               activation/raw/activation-runs.json)" == "1" ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REVIEW_RUN_ID" \
+            > activation/raw/review-run.json
+          jq -Scn --argjson id "$REVIEW_RUN_ID" \
+            --arg head '${{ github.event.workflow_run.head_sha }}' \
+            '{workflow_run:{id:$id,head_sha:$head}}' \
+            > activation/raw/workflow-run-event.json
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$REVIEW_RUN_ID/attempts/1/jobs?per_page=100" \
+            > activation/raw/review-jobs.json
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$REVIEW_RUN_ID/artifacts?per_page=100" \
+            > activation/raw/review-artifacts.json
+          jq -e --argjson id "$REVIEW_RUN_ID" \
+            --arg sha '${{ github.event.workflow_run.head_sha }}' \
+            '.id == $id and .run_attempt == 1 and .event == "workflow_dispatch"
+             and .status == "completed" and .conclusion == "success"
+             and .head_sha == $sha and .path == ".github/workflows/review-authority-v2.yml"' \
+            activation/raw/review-run.json > /dev/null
+          jq -e --argjson id "$REVIEW_RUN_ID" \
+            '[.[] | .jobs[] | select(.name == "review" and .run_id == $id
+              and .run_attempt == 1 and .status == "completed"
+              and .conclusion == "success")] | length == 1' \
+            activation/raw/review-jobs.json > /dev/null
+          for artifact in authority-v2-signed-review-t_c298fca4 \
+                          authority-v2-external-activation-review-t_c298fca4 ; do
+            artifact_id="$(jq -er --arg n "$artifact" \
+              '[.[] | .artifacts[] | select(.name == $n and .expired == false)]
+               | if length == 1 then .[0].id else
+                   error("review artifact is absent or ambiguous") end' \
+              activation/raw/review-artifacts.json)"
+            [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+            if [[ "$artifact" == authority-v2-signed-review-* ]]; then
+              archive=activation/raw/signed-review-artifact.zip
+              destination=activation/signed-review
+            else
+              archive=activation/raw/external-review-artifact.zip
+              destination=activation/external-review
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              > "$archive"
+            server_digest="$(jq -er --argjson id "$artifact_id" \
+              '.[] | .artifacts[] | select(.id == $id) | .digest' \
+              activation/raw/review-artifacts.json)"
+            [[ "$server_digest" \
+               == "sha256:$(sha256sum "$archive" | cut -d' ' -f1)" ]]
+          done
+          python3 - <<'PY'
+          import stat
+          import unicodedata
+          import zipfile
+          from contextlib import ExitStack
+          from pathlib import Path, PurePosixPath
+
+          MEMBER_LIMIT = 8 * 1024 * 1024
+          AGGREGATE_LIMIT = 32 * 1024 * 1024
+
+          inventories = (
+              (
+                  Path("activation/raw/signed-review-artifact.zip"),
+                  Path("activation/signed-review"),
+                  {
+                      "kanban-review-envelope.json",
+                      "preissuance-review-receipt.json",
+                      "preissuance-review-receipt.sigstore.json",
+                  },
+              ),
+              (
+                  Path("activation/raw/external-review-artifact.zip"),
+                  Path("activation/external-review"),
+                  {
+                      "external-activation-review-receipt.json",
+                      "external-activation-review-receipt.sigstore.json",
+                  },
+              ),
+          )
+          aggregate = 0
+          accepted = []
+          with ExitStack() as archives:
+              for archive_path, destination, expected in inventories:
+                  root = destination.resolve()
+                  if not destination.is_dir() or destination.is_symlink():
+                      raise SystemExit("unsafe review artifact extraction root")
+                  archive = archives.enter_context(zipfile.ZipFile(archive_path))
+                  infos = archive.infolist()
+                  if len(infos) != len(expected):
+                      raise SystemExit("review artifact inventory is incomplete")
+                  observed = {}
+                  for info in infos:
+                      name = info.filename
+                      segments = name.split("/")
+                      normalized = unicodedata.normalize(
+                          "NFC", PurePosixPath(*segments).as_posix()
+                      )
+                      if (not name or "\\" in name or name.startswith("/")
+                              or any(segment in ("", ".", "..")
+                                     for segment in segments)
+                              or normalized != name
+                              or len(segments) != 1 or name not in expected
+                              or name in observed or info.is_dir()):
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      mode = (info.external_attr >> 16) & 0xFFFF
+                      file_type = stat.S_IFMT(mode)
+                      if (info.create_system == 3
+                              and file_type != stat.S_IFREG):
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      if (info.create_system == 0
+                              and file_type not in (0, stat.S_IFREG)):
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      if info.create_system not in (0, 3):
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      if info.flag_bits & 1:
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      if (type(info.file_size) is not int
+                              or not 0 <= info.file_size <= MEMBER_LIMIT):
+                          raise SystemExit(
+                              "review artifact member exceeds size bound"
+                          )
+                      aggregate += info.file_size
+                      if aggregate > AGGREGATE_LIMIT:
+                          raise SystemExit(
+                              "review artifact exceeds aggregate size bound"
+                          )
+                      target = (root / normalized).resolve()
+                      if target.parent != root:
+                          raise SystemExit(
+                              "unsafe review artifact extraction target"
+                          )
+                      if target.exists() or target.is_symlink():
+                          raise SystemExit(
+                              "unsafe or aliased review artifact path"
+                          )
+                      observed[name] = (info, target)
+                  if set(observed) != expected:
+                      raise SystemExit("review artifact inventory is incomplete")
+                  accepted.append((archive, observed))
+
+              for archive, observed in accepted:
+                  for name in sorted(observed):
+                      info, target = observed[name]
+                      data = archive.read(info)
+                      if len(data) != info.file_size:
+                          raise SystemExit("review artifact member size mismatch")
+                      target.write_bytes(data)
+          PY
+          test -s activation/signed-review/kanban-review-envelope.json
+          test -s activation/signed-review/preissuance-review-receipt.json
+          test -s activation/signed-review/preissuance-review-receipt.sigstore.json
+          test -s activation/external-review/external-activation-review-receipt.json
+          test -s activation/external-review/external-activation-review-receipt.sigstore.json
+          DECISION_SHA="$(jq -er .decision_delivery.commit_sha \
+            activation/external-review/external-activation-review-receipt.json)"
+          [[ "$DECISION_SHA" == "$GITHUB_SHA" ]]
+          gh api "repos/$GITHUB_REPOSITORY/commits/$DECISION_SHA" \
+            > activation/raw/decision-commit.json
+          jq -e --arg decision "$DECISION_SHA" \
+            --arg review '${{ github.event.workflow_run.head_sha }}' \
+            '.sha == $decision and [.parents[].sha] == [$review]' \
+            activation/raw/decision-commit.json > /dev/null
+
+      - name: Materialize only the immutable reviewed Authority candidate
+        run: |
+          set -euo pipefail
+          umask 077
+          REVIEW=activation/external-review/external-activation-review-receipt.json
+          AUTHORITY_REPO="$(jq -er .authorized_source_run.authority_repository bootstrap-contract.json)"
+          AUTHORITY_BASE="$(jq -er .base_commit "$REVIEW")"
+          AUTHORITY_HEAD="$(jq -er .head_commit "$REVIEW")"
+          AUTHORITY_TREE="$(jq -er .head_tree "$REVIEW")"
+          [[ "$AUTHORITY_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AUTHORITY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AUTHORITY_TREE" =~ ^[0-9a-f]{40}$ ]]
+          mkdir "$RUNNER_TEMP/authority-verifier"
+          git -C "$RUNNER_TEMP/authority-verifier" init --quiet
+          git -C "$RUNNER_TEMP/authority-verifier" remote add origin \
+            "https://github.com/$AUTHORITY_REPO.git"
+          git -C "$RUNNER_TEMP/authority-verifier" fetch --quiet --no-tags --depth=2 \
+            origin "$AUTHORITY_HEAD"
+          git -C "$RUNNER_TEMP/authority-verifier" checkout --quiet --detach FETCH_HEAD
+          [[ "$(git -C "$RUNNER_TEMP/authority-verifier" rev-parse HEAD)" == "$AUTHORITY_HEAD" ]]
+          [[ "$(git -C "$RUNNER_TEMP/authority-verifier" rev-parse 'HEAD^{tree}')" == "$AUTHORITY_TREE" ]]
+          [[ "$(git -C "$RUNNER_TEMP/authority-verifier" rev-list --parents -n 1 HEAD)" \
+             == "$AUTHORITY_HEAD $AUTHORITY_BASE" ]]
+          [[ -z "$(git -C "$RUNNER_TEMP/authority-verifier" status --porcelain=v1 -z --untracked-files=all)" ]]
+          while IFS=$'\t' read -r path digest ; do
+            [[ "$(git -C "$RUNNER_TEMP/authority-verifier" show "$AUTHORITY_HEAD:$path" | sha256sum | cut -d' ' -f1)" \
+               == "$digest" ]]
+          done < <(jq -er '.tracked_paths_sha256 | to_entries[] | [.key, .value] | @tsv' "$REVIEW")
+          {
+            echo "authority_base=$AUTHORITY_BASE"
+            echo "authority_head=$AUTHORITY_HEAD"
+            echo "authority_tree=$AUTHORITY_TREE"
+          } >> "$GITHUB_ENV"
+
+      - name: Derive all four candidate diff streams from the immutable checkout
+        run: |
+          set -euo pipefail
+          umask 077
+          export LC_ALL=C
+          cd "$RUNNER_TEMP/authority-verifier"
+          git diff --binary --full-index --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ "$authority_base" "$authority_head" -- \
+            > "$GITHUB_WORKSPACE/activation/canonical-binary-full-index.diff"
+          git diff --name-status -z --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ "$authority_base" "$authority_head" -- \
+            > "$GITHUB_WORKSPACE/activation/name-status-find-renames-50.z"
+          git diff --raw -z --full-index --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ "$authority_base" "$authority_head" -- \
+            > "$GITHUB_WORKSPACE/activation/raw-full-index-find-renames-50.z"
+          git diff --raw -z --no-ext-diff --no-abbrev --find-renames=50% --src-prefix=a/ --dst-prefix=b/ "$authority_base" "$authority_head" -- \
+            > "$GITHUB_WORKSPACE/activation/raw-status-authoritative.z"
+          candidate_diff_sha256="$(jq -Scn \
+            --arg d0 "$(sha256sum "$GITHUB_WORKSPACE/activation/canonical-binary-full-index.diff" | cut -d' ' -f1)" \
+            --arg d1 "$(sha256sum "$GITHUB_WORKSPACE/activation/name-status-find-renames-50.z" | cut -d' ' -f1)" \
+            --arg d2 "$(sha256sum "$GITHUB_WORKSPACE/activation/raw-full-index-find-renames-50.z" | cut -d' ' -f1)" \
+            --arg d3 "$(sha256sum "$GITHUB_WORKSPACE/activation/raw-status-authoritative.z" | cut -d' ' -f1)" \
+            '{"canonical-binary-full-index.diff":$d0,
+              "name-status-find-renames-50.z":$d1,
+              "raw-full-index-find-renames-50.z":$d2,
+              "raw-status-authoritative.z":$d3}')"
+          reviewed_diff_sha256="$(jq -Sc .candidate_diff_sha256 \
+            "$GITHUB_WORKSPACE/activation/external-review/external-activation-review-receipt.json")"
+          [[ "$candidate_diff_sha256" == "$reviewed_diff_sha256" ]]
+          [[ "$(printf '%s' "$candidate_diff_sha256" | jq -er
+               '."canonical-binary-full-index.diff"')" \
+             == "$(jq -er .canonical_diff_sha256 \
+               "$GITHUB_WORKSPACE/activation/external-review/external-activation-review-receipt.json")" ]]
+
+      - name: Compose the exact candidate-specific activation subject
+        run: |
+          set -euo pipefail
+          umask 077
+          # The exact bytes the evidence will sign, and the exact bytes the
+          # production verifier recomputes from the candidate identity. `jq -Sc`
+          # emits sorted compact JSON with a trailing newline, which is byte for
+          # byte what `_activation_subject_bytes` produces.
+          jq -Sc -n \
+            --arg subject_type 'acc-authority-v2-generated-activation-subject' \
+            --arg repository 'chrizzatsu/acc-authority-independent-review' \
+            --arg head "$authority_head" \
+            --arg tree "$authority_tree" \
+            --arg d0 "$(sha256sum activation/canonical-binary-full-index.diff | cut -d ' ' -f 1)" \
+            --arg d1 "$(sha256sum activation/name-status-find-renames-50.z | cut -d ' ' -f 1)" \
+            --arg d2 "$(sha256sum activation/raw-full-index-find-renames-50.z | cut -d ' ' -f 1)" \
+            --arg d3 "$(sha256sum activation/raw-status-authoritative.z | cut -d ' ' -f 1)" \
+            '{
+               subject_type: $subject_type,
+               repository: $repository,
+               candidate_head: $head,
+               candidate_tree: $tree,
+               candidate_diff_sha256: {
+                 "canonical-binary-full-index.diff": $d0,
+                 "name-status-find-renames-50.z": $d1,
+                 "raw-full-index-find-renames-50.z": $d2,
+                 "raw-status-authoritative.z": $d3
+               }
+             }' > activation/activation-subject.json
+          test -s activation/activation-subject.json
+
+      - name: Install pinned keyless Sigstore client
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+
+      - name: Authenticate the immutable zero-finding reviewer evidence
+        env:
+          REVIEW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          EXTERNAL=activation/external-review/external-activation-review-receipt.json
+          EXTERNAL_BUNDLE=activation/external-review/external-activation-review-receipt.sigstore.json
+          ENVELOPE=activation/signed-review/kanban-review-envelope.json
+          RECEIPT=activation/signed-review/preissuance-review-receipt.json
+          RECEIPT_BUNDLE=activation/signed-review/preissuance-review-receipt.sigstore.json
+          for subject in "$EXTERNAL" "$RECEIPT" ; do
+            if [[ "$subject" == "$EXTERNAL" ]]; then bundle="$EXTERNAL_BUNDLE"; else bundle="$RECEIPT_BUNDLE"; fi
+            cosign verify-blob \
+              --bundle "$bundle" \
+              --certificate-identity 'https://github.com/chrizzatsu/acc-authority-independent-review/.github/workflows/review-authority-v2.yml@refs/heads/main' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              --certificate-github-workflow-repository 'chrizzatsu/acc-authority-independent-review' \
+              --certificate-github-workflow-ref 'refs/heads/main' \
+              --certificate-github-workflow-sha "$REVIEW_HEAD_SHA" \
+              --certificate-github-workflow-trigger 'workflow_dispatch' \
+              "$subject"
+          done
+          jq -e \
+            '.findings_count == 0 and .findings == []
+             and .decision == "APPROVED" and .activation_authorized == true
+             and .candidate_owned == false and .produced_after_candidate == true
+             and .head_commit == $head and .head_tree == $tree
+             and .decision_delivery.commit_parent == $review_head
+             and .decision_delivery.cas_expected_old_oid == $review_head
+             and .decision_delivery.cas_ref == "refs/heads/main"
+             and .decision_delivery.cas_primitive
+                 == "git-receive-pack-expected-old-oid"
+             and .decision_delivery.cas_capability_proven == true
+             and .decision_delivery.cas_capability_probe
+                 == "stale-lease-refused-and-honest-lease-applied"
+             and .decision_delivery.race_readback_verified == true
+             and .decision_delivery.readback_verified == true' \
+            --arg head "$authority_head" --arg tree "$authority_tree" \
+            --arg review_head "$REVIEW_HEAD_SHA" "$EXTERNAL" > /dev/null
+          jq -e '.findings_count == 0 and .findings == []
+                 and .candidate.head_commit == $head
+                 and .candidate.head_tree == $tree' \
+            --arg head "$authority_head" --arg tree "$authority_tree" \
+            "$RECEIPT" > /dev/null
+          [[ "$(jq -er .review_receipt_sha256 "$ENVELOPE")" \
+             == "$(sha256sum "$RECEIPT" | cut -d' ' -f1)" ]]
+          cas_expected_old_oid="$(jq -er .decision_delivery.cas_expected_old_oid "$EXTERNAL")"
+          [[ "$cas_expected_old_oid" == "$REVIEW_HEAD_SHA" ]]
+          [[ "$(jq -er .decision_delivery.readback_verified "$EXTERNAL")" == "true" ]]
+
+      - name: Bind the exact Cosign v3.1.3 binary this run really installed
+        run: |
+          set -euo pipefail
+          COSIGN_BINARY="$(command -v cosign)"
+          test -x "$COSIGN_BINARY"
+          COSIGN_SHA256="$(sha256sum "$COSIGN_BINARY" | cut -d ' ' -f 1)"
+          # The generator is bound by the digest of its own immutable bytes,
+          # before it is executed. A different build, a relabelled release or a
+          # substituted binary stops the job here, ahead of any generation.
+          test "$COSIGN_SHA256" = '4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71'
+          {
+            echo "cosign_binary=$COSIGN_BINARY"
+            echo "cosign_sha256=$COSIGN_SHA256"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate the candidate-specific activation evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          # The one evidence-producing action of this separately authorized
+          # activation, using the already reviewed keyless blob-signing shape.
+          # The signer is a Fulcio workload key on P-256 - the exact algorithm
+          # the pinned generator supports; `ed25519` in the route name is the
+          # Rekor v2 transparency *log* key, which the verifier binds from the
+          # pinned trusted root and which no signer flag can assert.
+          test ! -e activation/generated-activation-evidence.sigstore.json
+          "$cosign_binary" sign-blob --yes \
+            --signing-algorithm ecdsa-sha2-256-nistp256 \
+            --bundle activation/generated-activation-evidence.sigstore.json \
+            activation/activation-subject.json
+          test -s activation/generated-activation-evidence.sigstore.json
+          # The digest is computed from the bytes that were really written,
+          # never from anything declared.
+          EVIDENCE_SHA256="$(sha256sum activation/generated-activation-evidence.sigstore.json | cut -d ' ' -f 1)"
+          [[ "$EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          echo "evidence_sha256=$EVIDENCE_SHA256" >> "$GITHUB_ENV"
+
+      - name: Bind the authenticated identity of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > activation/raw/activation-run.json
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            > activation/raw/activation-jobs.json
+          JOB_ID="$(jq -er --arg n 'generated-activation-evidence' \
+            '[.[] | .jobs[] | select(.name == $n)]
+             | if length == 1 then .[0].id else
+                 error("activation job selection is absent or ambiguous") end' \
+            activation/raw/activation-jobs.json)"
+          [[ "$JOB_ID" =~ ^[1-9][0-9]*$ ]]
+          SIGNING_WINDOW_START="$(jq -er --arg n 'generated-activation-evidence' \
+            '.[] | .jobs[] | select(.name == $n) | .started_at' \
+            activation/raw/activation-jobs.json | xargs -I{} date -u -d {} +%s)"
+          SIGNING_WINDOW_END="$(date -u +%s)"
+          [[ "$SIGNING_WINDOW_START" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SIGNING_WINDOW_END" =~ ^[1-9][0-9]*$ ]]
+          (( SIGNING_WINDOW_START <= SIGNING_WINDOW_END ))
+          gh workflow disable review-authority-v2.yml --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/review-authority-v2.yml" \
+            > activation/raw/workflow-state-cleanup.json
+          [[ "$(jq -er .state activation/raw/workflow-state-cleanup.json)" \
+             == "disabled_manually" ]]
+          {
+            echo "activation_job_id=$JOB_ID"
+            echo "signing_window_start=$SIGNING_WINDOW_START"
+            echo "signing_window_end=$SIGNING_WINDOW_END"
+          } >> "$GITHUB_ENV"
+
+      - name: Compose the closed generated-activation-evidence record
+        run: |
+          set -euo pipefail
+          umask 077
+          EVIDENCE="$GITHUB_WORKSPACE/activation/generated-activation-evidence.sigstore.json"
+          SUBJECT="$GITHUB_WORKSPACE/activation/activation-subject.json"
+          test -s "$EVIDENCE"
+          test -s "$SUBJECT"
+          jq -Scn \
+            --arg a0 "$(sha256sum activation/raw/activation-run.json | cut -d' ' -f1)" \
+            --arg a1 "$(sha256sum activation/raw/activation-jobs.json | cut -d' ' -f1)" \
+            --arg a2 "$(sha256sum activation/raw/activation-runs.json | cut -d' ' -f1)" \
+            --arg a3 "$(sha256sum activation/raw/workflow-run-event.json | cut -d' ' -f1)" \
+            --arg d0 "$(sha256sum activation/raw/decision-commit.json | cut -d' ' -f1)" \
+            --arg r0 "$(sha256sum activation/raw/review-run.json | cut -d' ' -f1)" \
+            --arg r1 "$(sha256sum activation/raw/review-jobs.json | cut -d' ' -f1)" \
+            --arg r2 "$(sha256sum activation/raw/review-artifacts.json | cut -d' ' -f1)" \
+            --arg z0 "$(sha256sum activation/raw/external-review-artifact.zip | cut -d' ' -f1)" \
+            --arg z1 "$(sha256sum activation/raw/signed-review-artifact.zip | cut -d' ' -f1)" \
+            --arg w0 "$(sha256sum activation/raw/workflow-state-before.json | cut -d' ' -f1)" \
+            --arg w1 "$(sha256sum activation/raw/workflow-state-after.json | cut -d' ' -f1)" \
+            --arg w2 "$(sha256sum activation/raw/workflow-state-cleanup.json | cut -d' ' -f1)" \
+            '{record_type:"acc-authority-v2-authenticated-activation-provenance",
+              files:{"activation-jobs.json":$a1,"activation-run.json":$a0,
+                "activation-runs.json":$a2,"external-review-artifact.zip":$z0,
+                "decision-commit.json":$d0,
+                "review-artifacts.json":$r2,
+                "review-jobs.json":$r1,"review-run.json":$r0,
+                "signed-review-artifact.zip":$z1,
+                "workflow-state-after.json":$w1,
+                "workflow-state-before.json":$w0,
+                "workflow-state-cleanup.json":$w2,
+                "workflow-run-event.json":$a3}}' \
+            > activation/raw-provenance.json
+          test -s activation/raw-provenance.json
+          jq -n \
+            --arg record_type 'acc-authority-v2-generated-activation-evidence' \
+            --arg head "$authority_head" \
+            --arg tree "$authority_tree" \
+            --arg cosign_sha256 "$cosign_sha256" \
+            --arg evidence 'generated-activation-evidence.sigstore.json' \
+            --arg evidence_sha256 "$evidence_sha256" \
+            --arg subject 'activation-subject.json' \
+            --arg subject_sha256 "$(sha256sum "$SUBJECT" | cut -d ' ' -f 1)" \
+            --arg raw_provenance 'raw-provenance.json' \
+            --arg raw_provenance_sha256 "$(sha256sum activation/raw-provenance.json | cut -d ' ' -f 1)" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg ref "$GITHUB_REF" \
+            --arg sha "$GITHUB_SHA" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson job_id "$activation_job_id" \
+            --argjson signing_window_start "$signing_window_start" \
+            --argjson signing_window_end "$signing_window_end" \
+            --arg d0 "$(sha256sum activation/canonical-binary-full-index.diff | cut -d ' ' -f 1)" \
+            --arg d1 "$(sha256sum activation/name-status-find-renames-50.z | cut -d ' ' -f 1)" \
+            --arg d2 "$(sha256sum activation/raw-full-index-find-renames-50.z | cut -d ' ' -f 1)" \
+            --arg d3 "$(sha256sum activation/raw-status-authoritative.z | cut -d ' ' -f 1)" \
+            '{
+               record_type: $record_type,
+               candidate: {
+                 head: $head,
+                 tree: $tree,
+                 diff_sha256: {
+                   "canonical-binary-full-index.diff": $d0,
+                   "name-status-find-renames-50.z": $d1,
+                   "raw-full-index-find-renames-50.z": $d2,
+                   "raw-status-authoritative.z": $d3
+                 }
+               },
+               declaration: {
+                 generator: "cosign v3.1.3",
+                 generator_version: "v3.1.3",
+                 rekor_generation: "rekor-v2",
+                 rekor_log_key_algorithm: "PKIX_ED25519",
+                 route: "cosign-v3.1.3-ed25519-rekor-v2-rfc3161",
+                 signer_signature_algorithm: "ecdsa-p256-sha256",
+                 timestamp: "rfc3161"
+               },
+               generated_output: { path: $evidence, sha256: $evidence_sha256 },
+               generated_subject: { path: $subject, sha256: $subject_sha256 },
+               generator_binary: {
+                 platform: "linux/amd64",
+                 sha256: $cosign_sha256
+               },
+               raw_provenance: {
+                 path: $raw_provenance,
+                 sha256: $raw_provenance_sha256
+               },
+               run_provenance: {
+                 activation_head_sha: $sha,
+                 decision_sha: $sha,
+                 job_id: $job_id,
+                 job_name: "generated-activation-evidence",
+                 ref: $ref,
+                 repository: $repository,
+                 review_head_sha: "${{ github.event.workflow_run.head_sha }}",
+                 run_attempt: $run_attempt,
+                 run_id: $run_id,
+                 sha: $sha,
+                 signing_window_end: $signing_window_end,
+                 signing_window_start: $signing_window_start
+               }
+             }' > activation/activation-record.json
+
+      - name: Verify the generated bytes through the unchanged Authority verifier
+        run: |
+          set -euo pipefail
+          # The unchanged production CLI, over exactly the bytes just generated.
+          # It re-binds the generator binary, the candidate and its four diff
+          # streams, the generated subject recomputed from that candidate
+          # identity, the generated output digest and this run's authenticated
+          # identity, then routes the bytes through the generator-bound contract
+          # and the cryptographic verifier, requiring the ECDSA-P256 signer, the
+          # pinned Ed25519 Rekor v2 log and RFC 3161 evidence before any
+          # success. It authorizes nothing: activation, approval and release all
+          # stay false whatever the record claims.
+          python3 "$RUNNER_TEMP/authority-verifier/scripts/pin_source_chain_activation_v2.py" \
+            --phase generated-activation-evidence \
+            --activation-record activation/activation-record.json
+
+      - name: Seal and persist the exact generated evidence inventory
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 "$RUNNER_TEMP/authority-verifier/scripts/pin_source_chain_activation_v2.py" \
+            --phase generated-artifact-inventory \
+            --artifact-root activation
+          find activation -type f -exec chmod 0444 {} +
+          find activation -depth -type d -exec chmod 0555 {} +
+          [[ "$(stat -c '%a' activation/activation-subject.json)" == "444" ]]
+          [[ "$(stat -c '%a' activation/generated-activation-evidence.sigstore.json)" == "444" ]]
+          [[ "$(stat -c '%a' activation/activation-record.json)" == "444" ]]
+          [[ "$(stat -c '%a' activation/raw-provenance.json)" == "444" ]]
+
+      - name: Upload immutable generated activation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-v2-generated-activation-evidence-t_c298fca4
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            activation/activation-record.json
+            activation/activation-subject.json
+            activation/canonical-binary-full-index.diff
+            activation/external-review/external-activation-review-receipt.json
+            activation/external-review/external-activation-review-receipt.sigstore.json
+            activation/generated-activation-evidence.sigstore.json
+            activation/name-status-find-renames-50.z
+            activation/raw-provenance.json
+            activation/raw/activation-jobs.json
+            activation/raw/activation-run.json
+            activation/raw/activation-runs.json
+            activation/raw/decision-commit.json
+            activation/raw/external-review-artifact.zip
+            activation/raw/review-artifacts.json
+            activation/raw/review-jobs.json
+            activation/raw/review-run.json
+            activation/raw/signed-review-artifact.zip
+            activation/raw/workflow-run-event.json
+            activation/raw/workflow-state-after.json
+            activation/raw/workflow-state-before.json
+            activation/raw/workflow-state-cleanup.json
+            activation/raw-full-index-find-renames-50.z
+            activation/raw-status-authoritative.z
+            activation/signed-review/kanban-review-envelope.json
+            activation/signed-review/preissuance-review-receipt.json
+            activation/signed-review/preissuance-review-receipt.sigstore.json
+
+      - name: Reassert disabled state and delete ephemeral bytes
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow disable review-authority-v2.yml --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/review-authority-v2.yml" \
+            > "$RUNNER_TEMP/workflow-state-cleanup.json"
+          [[ "$(jq -er .state "$RUNNER_TEMP/workflow-state-cleanup.json")" \
+             == "disabled_manually" ]]
+          if [[ -d activation ]]; then
+            chmod -R u+rwX activation
+            rm -rf activation
+          fi
+          test ! -e activation

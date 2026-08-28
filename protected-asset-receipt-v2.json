@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "authority_id": "apex-acc-attestation-authority-v2",
+  "protected_asset": {
+    "present": true,
+    "sha256": "54cbc72994f8d2e2aefa5916bb02c3a3c26b5db11fbad86c9281fd4aa970f222",
+    "directory_mode_0700": true,
+    "file_mode_0600": true,
+    "atomic_creation": true,
+    "raw_publishable_key_present": true,
+    "raw_api_instance_id_present": true,
+    "environment_type_development": true,
+    "publishable_fingerprint_match": true,
+    "api_instance_id_fingerprint_match": true,
+    "raw_values_emitted": false,
+    "raw_values_publicly_persisted": false,
+    "raw_values_attached_to_public_tracking": false
+  },
+  "retention": {
+    "delete_on": "Delete immediately after the Authority-v2 release gate records canonical redacted readback, or at 2026-09-23T08:04:22Z, whichever occurs first.",
+    "deletion_verification": "Verify the approved protected asset and all task-local temporary raw-value files are absent; record booleans and hashes only."
+  },
+  "candidate_handoff": {
+    "subjects_issued": false,
+    "subjects_signed": false,
+    "workflow_live_on_main": false,
+    "workflow_dispatched": false,
+    "github_environment_secrets_staged": false,
+    "release_published": false,
+    "approved": false,
+    "required_reviewer": "acc-reviewer",
+    "review_phase": "independent_preissuance_exact_candidate"
+  }
+}

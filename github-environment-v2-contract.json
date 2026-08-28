@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "repository": "chrizzatsu/acc-attestation-authority",
+  "environment": "attestation",
+  "required_reviewers": {
+    "minimum_count": 1,
+    "prevent_self_review": true
+  },
+  "can_admins_bypass": false,
+  "deployment_branch_policy": {
+    "protected_branches": true,
+    "custom_branch_policies": false
+  },
+  "deployment_branch_policy_readback": {
+    "protected_branches_mode_status": 404,
+    "protected_branches_mode_is_main_only": false,
+    "custom_main_mode_status": 200,
+    "custom_main_mode_exact_ref": "refs/heads/main"
+  },
+  "sealed_environment_readback": {
+    "authenticated_read_only": true,
+    "confirmed_absence_requires_authenticated_permission_proof": true,
+    "confirmed_absence_requires_exhaustive_authenticated_pagination": true,
+    "environment_id": 20467803126,
+    "environment_secrets_total_count": 0,
+    "http_status": 200,
+    "masked_or_unauthenticated_statuses": [
+      401,
+      403,
+      404
+    ],
+    "no_github_write_performed": true,
+    "permission_masked_404_is_not_absence": true,
+    "prevent_self_review": true,
+    "protected_branches": true,
+    "required_reviewer_logins": [
+      "chrizzatsu"
+    ],
+    "sealed_state": "current-authenticated-read-only-live-environment-state",
+    "state_change_fails_closed": true
+  },
+  "workflow_trigger": "workflow_dispatch",
+  "runner": "ubuntu-latest",
+  "public_repository_required": true,
+  "repository_immutable_releases_required_before_issuance": true,
+  "maximum_incremental_spend_eur": "0.00",
+  "fallback_path": false,
+  "authenticated_issuance": {
+    "source": "github-run-scoped-environment-approval-and-actions-oidc",
+    "run_attempt": 1,
+    "oidc_audience": "sigstore",
+    "required_environment": "attestation",
+    "exact_server_readbacks": [
+      "workflow_run",
+      "workflow_job",
+      "run_scoped_environment_approval",
+      "actions_oidc_claims"
+    ],
+    "self_review_forbidden": true,
+    "caller_placeholders_forbidden": true,
+    "unsupported_deployment_relationship_evidence": {
+      "deployment_id_omitted": true,
+      "deployment_status_omitted": true,
+      "log_url_relationship_forbidden": true
+    },
+    "run_scoped_environment_approval_binding": {
+      "endpoint_template": "https://api.github.com/repos/chrizzatsu/acc-attestation-authority/actions/runs/{run_id}/approvals",
+      "projected_response_fields": [
+        "environments",
+        "state",
+        "user"
+      ],
+      "synthetic_run_ids_forbidden": true
+    }
+  }
+}

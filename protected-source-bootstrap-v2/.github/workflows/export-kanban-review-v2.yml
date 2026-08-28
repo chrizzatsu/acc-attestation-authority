@@ -1,0 +1,305 @@
+name: Export immutable protected Kanban Authority-v2 review
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: protected-kanban-export-t_c298fca4
+  cancel-in-progress: false
+
+jobs:
+  # One activation, enforced before anything protected happens.
+  #
+  # `GITHUB_RUN_ATTEMPT == 1` only blocks reruns of one run: a second
+  # `workflow_dispatch` is a different run id that is also attempt 1. So the
+  # sealed workflow is disabled first, with the one job that holds a write
+  # grant, and the disabled state is read back from the server rather than
+  # assumed. While it is `disabled_manually` no further activation run id can
+  # come into existence behind the export below.
+  single-activation:
+    runs-on: ubuntu-latest
+    environment: protected-kanban-export
+    permissions:
+      actions: write
+    steps:
+      - name: Close inherited Git credential scopes before protected-source operations
+        run: |
+          set -euo pipefail
+          umask 077
+          readonly INVENTORY="$RUNNER_TEMP/authority-v2-git-config-inventory"
+          set +e
+          git config --show-origin --show-scope --name-only \
+            --get-regexp '^http\..*\.extraheader$' > "$INVENTORY" 2>/dev/null
+          inherited_status=$?
+          set -e
+          if (( inherited_status != 0 && inherited_status != 1 )); then
+            echo 'credential scope closure could not enumerate effective Git configuration' >&2
+            exit 1
+          fi
+          HEADER_NAMES=(http.extraHeader)
+          while IFS=$'\t' read -r scope origin header; do
+            [[ -n "$header" ]]
+            HEADER_NAMES+=("$header")
+            printf 'neutralizing inherited Git extraheader: %s %s %s\n' \
+              "$scope" "$origin" "$header" >&2
+          done < "$INVENTORY"
+          readonly CLOSED_GIT_HOME="$RUNNER_TEMP/authority-v2-git-home"
+          readonly CLOSED_GIT_XDG="$RUNNER_TEMP/authority-v2-git-xdg"
+          readonly CLOSED_GIT_GLOBAL="$RUNNER_TEMP/authority-v2-git-global.config"
+          mkdir -p "$CLOSED_GIT_HOME" "$CLOSED_GIT_XDG"
+          : > "$CLOSED_GIT_GLOBAL"
+          export HOME="$CLOSED_GIT_HOME"
+          export XDG_CONFIG_HOME="$CLOSED_GIT_XDG"
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_SYSTEM=/dev/null
+          export GIT_CONFIG_GLOBAL="$CLOSED_GIT_GLOBAL"
+          unset GIT_CONFIG_PARAMETERS
+          export GIT_CONFIG_COUNT="${#HEADER_NAMES[@]}"
+          index=0
+          for header in "${HEADER_NAMES[@]}"; do
+            key_variable="GIT_CONFIG_KEY_$index"
+            value_variable="GIT_CONFIG_VALUE_$index"
+            printf -v "$key_variable" '%s' "$header"
+            printf -v "$value_variable" '%s' ''
+            export "$key_variable" "$value_variable"
+            index=$((index + 1))
+          done
+          for header in "${HEADER_NAMES[@]}"; do
+            effective_value=missing
+            while IFS= read -r value; do
+              effective_value="$value"
+            done < <(git config --get-all "$header")
+            if [[ -n "$effective_value" ]]; then
+              echo 'credential residue remains after all-scope closure' >&2
+              exit 1
+            fi
+          done
+          {
+            echo "HOME=$HOME"
+            echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+            echo "GIT_CONFIG_NOSYSTEM=$GIT_CONFIG_NOSYSTEM"
+            echo "GIT_CONFIG_SYSTEM=$GIT_CONFIG_SYSTEM"
+            echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+            echo 'GIT_CONFIG_PARAMETERS='
+            echo "GIT_CONFIG_COUNT=$GIT_CONFIG_COUNT"
+            index=0
+            for header in "${HEADER_NAMES[@]}"; do
+              key_variable="GIT_CONFIG_KEY_$index"
+              echo "$key_variable=${!key_variable}"
+              echo "GIT_CONFIG_VALUE_$index="
+              index=$((index + 1))
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Disable the sealed workflow and read the disabled state back
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          WORKFLOW='export-kanban-review-v2.yml'
+          ENDPOINT="repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW"
+          gh api --method PUT \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$ENDPOINT/disable"
+          STATE="$(gh api --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$ENDPOINT" --jq .state)"
+          [[ "$STATE" == "disabled_manually" ]]
+
+  export:
+    needs: single-activation
+    runs-on: ubuntu-latest
+    environment: protected-kanban-export
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Close inherited Git credential scopes before protected-source checkout
+        run: |
+          set -euo pipefail
+          umask 077
+          readonly INVENTORY="$RUNNER_TEMP/authority-v2-git-config-inventory"
+          set +e
+          git config --show-origin --show-scope --name-only \
+            --get-regexp '^http\..*\.extraheader$' > "$INVENTORY" 2>/dev/null
+          inherited_status=$?
+          set -e
+          if (( inherited_status != 0 && inherited_status != 1 )); then
+            echo 'credential scope closure could not enumerate effective Git configuration' >&2
+            exit 1
+          fi
+          HEADER_NAMES=(http.extraHeader)
+          while IFS=$'\t' read -r scope origin header; do
+            [[ -n "$header" ]]
+            HEADER_NAMES+=("$header")
+            printf 'neutralizing inherited Git extraheader: %s %s %s\n' \
+              "$scope" "$origin" "$header" >&2
+          done < "$INVENTORY"
+          readonly CLOSED_GIT_HOME="$RUNNER_TEMP/authority-v2-git-home"
+          readonly CLOSED_GIT_XDG="$RUNNER_TEMP/authority-v2-git-xdg"
+          readonly CLOSED_GIT_GLOBAL="$RUNNER_TEMP/authority-v2-git-global.config"
+          mkdir -p "$CLOSED_GIT_HOME" "$CLOSED_GIT_XDG"
+          : > "$CLOSED_GIT_GLOBAL"
+          export HOME="$CLOSED_GIT_HOME"
+          export XDG_CONFIG_HOME="$CLOSED_GIT_XDG"
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_SYSTEM=/dev/null
+          export GIT_CONFIG_GLOBAL="$CLOSED_GIT_GLOBAL"
+          unset GIT_CONFIG_PARAMETERS
+          export GIT_CONFIG_COUNT="${#HEADER_NAMES[@]}"
+          index=0
+          for header in "${HEADER_NAMES[@]}"; do
+            key_variable="GIT_CONFIG_KEY_$index"
+            value_variable="GIT_CONFIG_VALUE_$index"
+            printf -v "$key_variable" '%s' "$header"
+            printf -v "$value_variable" '%s' ''
+            export "$key_variable" "$value_variable"
+            index=$((index + 1))
+          done
+          for header in "${HEADER_NAMES[@]}"; do
+            effective_value=missing
+            while IFS= read -r value; do
+              effective_value="$value"
+            done < <(git config --get-all "$header")
+            if [[ -n "$effective_value" ]]; then
+              echo 'credential residue remains after all-scope closure' >&2
+              exit 1
+            fi
+          done
+          {
+            echo "HOME=$HOME"
+            echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+            echo "GIT_CONFIG_NOSYSTEM=$GIT_CONFIG_NOSYSTEM"
+            echo "GIT_CONFIG_SYSTEM=$GIT_CONFIG_SYSTEM"
+            echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+            echo 'GIT_CONFIG_PARAMETERS='
+            echo "GIT_CONFIG_COUNT=$GIT_CONFIG_COUNT"
+            index=0
+            for header in "${HEADER_NAMES[@]}"; do
+              key_variable="GIT_CONFIG_KEY_$index"
+              echo "$key_variable=${!key_variable}"
+              echo "GIT_CONFIG_VALUE_$index="
+              index=$((index + 1))
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout exact sealed protected-source bootstrap
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Read back the disabled state and the complete authorized run set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p authenticated/raw
+          API='https://api.github.com'
+          WORKFLOW="$API/repos/$GITHUB_REPOSITORY/actions/workflows/export-kanban-review-v2.yml"
+          # The read-only readback of the disable the preceding job performed.
+          # This lane never holds a write grant, so it can observe that no
+          # further activation run can be dispatched but can never cause it.
+          gh api -i --header "X-GitHub-Api-Version: 2022-11-28" "$WORKFLOW" \
+            > authenticated/raw/workflow-state.http
+          # One exhaustive traversal that terminates only where the server
+          # advertises no further page. The gate and the export consume exactly
+          # this captured set, so no fixed page count is assumed and no
+          # additional authorized run can hide past a last captured page. The
+          # absence of a `rel="next"` is the normal end of the traversal; the
+          # page bound below is a fail-closed error, never a termination.
+          url="${WORKFLOW}/runs?per_page=100&page=1"
+          page=1
+          while : ; do
+            gh api -i --header "X-GitHub-Api-Version: 2022-11-28" "$url" \
+              > "authenticated/raw/runs-page-${page}.http"
+            nxt="$(tr -d '\r' < "authenticated/raw/runs-page-${page}.http" \
+              | sed -n '/^$/q;p' | { grep -i '^link:' || true; } | tr ',' '\n' \
+              | { grep 'rel="next"' || true; } \
+              | sed -n 's/.*<\(.*\)>.*/\1/p' | head -1 || true)"
+            if [ -z "$nxt" ]; then
+              break
+            fi
+            page=$((page + 1))
+            if [ "$page" -gt 100 ]; then
+              echo "unterminated pagination: ${WORKFLOW}/runs" >&2
+              exit 1
+            fi
+            url="$nxt"
+          done
+
+      - name: Exclude every additional activation run before any protected action
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 scripts/export_kanban_review_v2.py --phase gate
+
+      - name: Read the authenticated server commit state of every reviewed lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          AUTHORITY_REPO="$(jq -er .authority_repository bootstrap-contract.json)"
+          INDEPENDENT_REPO="$(jq -er .independent_review_repository bootstrap-contract.json)"
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA" > authenticated/source-commit.json
+          gh api "repos/$INDEPENDENT_REPO/commits/heads/main" --jq '{sha: .sha, tree: {sha: .commit.tree.sha}}' > authenticated/independent-commit.json
+          gh api "repos/$AUTHORITY_REPO/commits/heads/main" --jq '{sha: .sha, tree: {sha: .commit.tree.sha}}' > authenticated/authority-commit.json
+
+      - name: Materialise the authenticated Authority candidate checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          AUTHORITY_REPO="$(jq -er .authority_repository bootstrap-contract.json)"
+          AUTHORITY_HEAD="$(jq -er .sha authenticated/authority-commit.json)"
+          [[ "$AUTHORITY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          gh repo clone "$AUTHORITY_REPO" authenticated/authority-checkout -- --no-tags
+          git -C authenticated/authority-checkout checkout --quiet --detach "$AUTHORITY_HEAD"
+          git -C authenticated/authority-checkout status --porcelain=v1 | tee /dev/null | wc -c | grep -qx '0'
+
+      - name: Export the exact sealed protected review from server run state
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 scripts/export_kanban_review_v2.py --phase export
+
+      - name: Upload immutable protected review artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-v2-review-t_c298fca4
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            protected-review/kanban-review-envelope.json
+            protected-review/preissuance-review-receipt.json
+
+  # Cleanup covers both paths. `always()` runs it after a successful, failed or
+  # cancelled export, and after a failed disable, so the sealed workflow is
+  # never left enabled and the final state is always read back from the server
+  # rather than inferred from whether the export happened to succeed.
+  cleanup:
+    needs: [single-activation, export]
+    if: always()
+    runs-on: ubuntu-latest
+    environment: protected-kanban-export
+    permissions:
+      actions: write
+    steps:
+      - name: Re-assert the disable and read the final state back
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          WORKFLOW='export-kanban-review-v2.yml'
+          ENDPOINT="repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW"
+          gh api --method PUT \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$ENDPOINT/disable"
+          STATE="$(gh api --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$ENDPOINT" --jq .state)"
+          [[ "$STATE" == "disabled_manually" ]]

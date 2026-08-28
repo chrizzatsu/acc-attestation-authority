@@ -1,0 +1,260 @@
+{
+  "$id": "https://github.com/chrizzatsu/acc-attestation-authority/schemas/authority-v2-subject.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "case": {
+          "const": "stale"
+        },
+        "case_contract": {
+          "const": {
+            "expected_freshness_result": "reject_stale",
+            "not_after_utc": "2025-12-31T23:59:59Z",
+            "not_before_utc": "2025-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "case": {
+          "const": "future"
+        },
+        "case_contract": {
+          "const": {
+            "expected_freshness_result": "reject_future",
+            "not_after_utc": "2030-12-31T23:59:59Z",
+            "not_before_utc": "2030-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "case": {
+          "const": "in_window"
+        },
+        "case_contract": {
+          "const": {
+            "expected_freshness_result": "accept_freshness_only",
+            "not_after_utc": "2029-12-31T23:59:59Z",
+            "not_before_utc": "2026-01-01T00:00:00Z"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "authority_id": {
+      "const": "apex-acc-attestation-authority-v2"
+    },
+    "authority_policy_sha256": {
+      "const": "aa47dd97fdc649733b0e218ce5ad82ca9a606f7e5480623edffc18fafbfb1069"
+    },
+    "case": {
+      "enum": [
+        "future",
+        "in_window",
+        "stale"
+      ]
+    },
+    "case_contract": {
+      "type": "object"
+    },
+    "issuance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "approver": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "candidate_head": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "candidate_tree": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "canonical_diff_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "environment": {
+          "const": "attestation"
+        },
+        "issuance_nonce": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "issuance_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "job_id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "oidc_audience": {
+          "const": "sigstore"
+        },
+        "oidc_issuer": {
+          "const": "https://token.actions.githubusercontent.com"
+        },
+        "oidc_subject": {
+          "const": "repo:chrizzatsu/acc-attestation-authority:environment:attestation"
+        },
+        "release_name": {
+          "const": "ACC Clerk instance attestation v2"
+        },
+        "release_tag": {
+          "const": "clerk-instance-attestation-v2"
+        },
+        "review_receipt_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "run_attempt": {
+          "const": 1,
+          "type": "integer"
+        },
+        "run_id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "workflow_ref": {
+          "const": "chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation-v2.yml@refs/heads/main"
+        }
+      },
+      "required": [
+        "issuance_sha256",
+        "candidate_head",
+        "candidate_tree",
+        "canonical_diff_sha256",
+        "review_receipt_sha256",
+        "issuance_nonce",
+        "release_tag",
+        "release_name",
+        "run_id",
+        "run_attempt",
+        "job_id",
+        "environment",
+        "approver",
+        "actor",
+        "oidc_issuer",
+        "oidc_audience",
+        "oidc_subject",
+        "workflow_ref"
+      ],
+      "type": "object"
+    },
+    "preissuance_review_receipt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "privacy": {
+      "additionalProperties": false,
+      "properties": {
+        "contains_pii": {
+          "const": false
+        },
+        "contains_raw_clerk_instance_id": {
+          "const": false
+        },
+        "contains_raw_publishable_key": {
+          "const": false
+        },
+        "contains_secret": {
+          "const": false
+        },
+        "customer_data": {
+          "const": false
+        }
+      },
+      "required": [
+        "contains_secret",
+        "contains_pii",
+        "contains_raw_clerk_instance_id",
+        "contains_raw_publishable_key",
+        "customer_data"
+      ],
+      "type": "object"
+    },
+    "reviewed_activation_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 2
+    },
+    "subject": {
+      "additionalProperties": false,
+      "properties": {
+        "acc_production_base_sha": {
+          "const": "ebb3af3df79438dbe926584f637a5e489f2682dd"
+        },
+        "clerk_api_instance_id_fingerprint_sha256": {
+          "const": "61ca182dce2bc4287d70a86b663dca397215613a10ed5f598f99cf11d63abb07"
+        },
+        "clerk_publishable_key_fingerprint_sha256": {
+          "const": "61b16bead7b0155c4e1d23ce83031702c5fce95f3799ea5a2a0f501e99cc057c"
+        },
+        "environment_type": {
+          "const": "development"
+        }
+      },
+      "required": [
+        "clerk_publishable_key_fingerprint_sha256",
+        "clerk_api_instance_id_fingerprint_sha256",
+        "environment_type",
+        "acc_production_base_sha"
+      ],
+      "type": "object"
+    },
+    "workflow_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "event_name": {
+          "const": "workflow_dispatch"
+        },
+        "git_ref": {
+          "const": "refs/heads/main"
+        },
+        "repository": {
+          "const": "chrizzatsu/acc-attestation-authority"
+        },
+        "workflow_ref": {
+          "const": "chrizzatsu/acc-attestation-authority/.github/workflows/sign-clerk-attestation-v2.yml@refs/heads/main"
+        }
+      },
+      "required": [
+        "repository",
+        "workflow_ref",
+        "git_ref",
+        "event_name"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "authority_id",
+    "case",
+    "authority_policy_sha256",
+    "reviewed_activation_sha",
+    "preissuance_review_receipt_sha256",
+    "issuance",
+    "workflow_evidence",
+    "subject",
+    "case_contract",
+    "privacy"
+  ],
+  "title": "ACC Authority-v2 exact temporal attestation subject",
+  "type": "object"
+}
